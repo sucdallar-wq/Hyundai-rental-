@@ -18,10 +18,17 @@ from app.api.excel_router import router as excel_router
 from app.services.rental_service import RentalInputs
 from app.services.rental_service import calculate_rental_offer
 from app.api.settings_router import router as settings_router
+
+origins = [
+    "http://localhost:5173",   
+    "http://127.0.0.1:5173",
+]   
+
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],   # öneml
+    allows_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

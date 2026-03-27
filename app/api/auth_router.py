@@ -53,3 +53,30 @@ def login(
 @router.get("/protected")
 def protected_route(current_user: User = Depends(get_current_user)):
     return {"message": f"Hello {current_user.username}"}
+
+@router.post("/create-test-user")
+def create_test_user(db: Session = Depends(get_db)):
+
+    user = User(
+        username="admin",
+        password=hash_password("123456")
+    )
+
+    db.add(user)
+    db.commit()
+
+    return {"status": "ok"}
+
+
+@router.delete("/delete-admin")
+def delete_admin(db: Session = Depends(get_db)):
+
+    user = db.query(User).filter(User.username == "admin").first()
+
+    if not user:
+        return {"message": "Admin yok"}
+
+    db.delete(user)
+    db.commit()
+
+    return {"message": "Admin silindi"}    
