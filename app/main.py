@@ -1,5 +1,19 @@
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Body
 from fastapi.middleware.cors import CORSMiddleware
+app = FastAPI()
+origins = [
+    "http://localhost:5173",   
+    "http://127.0.0.1:5173",
+]   
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -19,20 +33,8 @@ from app.services.rental_service import RentalInputs
 from app.services.rental_service import calculate_rental_offer
 from app.api.settings_router import router as settings_router
 
-origins = [
-    "http://localhost:5173",   
-    "http://127.0.0.1:5173",
-]   
 
-app = FastAPI()
 
-app.add_middleware(
-    CORSMiddleware,
-    allows_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PDF_DIR = os.path.join(BASE_DIR, "pdf")
