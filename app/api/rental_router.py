@@ -148,7 +148,7 @@ def rental_offer_auto(
         salesman=current_user.username           
     )
     file_name = os.path.basename(file_path)
-    send_rental_offer_email(payload.get("email"), file_path)
+    #send_rental_offer_email(payload.get("email"), file_path)
     offer = RentalOffer(
         customer=payload["customer"],
         email=payload.get("email"),

@@ -50,44 +50,46 @@ def _send_email(to_email, subject, body, pdf_file):
             smtp.login(settings["user"], settings["password"])
             smtp.send_message(msg)
 
-    except smtplib.SMTPAuthenticationError as e:
-        raise Exception(
-            "SMTP kimlik doğrulama hatası. Gmail adresi veya App Password yanlış."
-        ) from e
     except Exception as e:
-        raise Exception(f"Email gönderilemedi: {str(e)}") from e
-
+        print("MAIL ERROR:", str(e))   # ❗ raise yok
 
 def send_offer_email(to_email, pdf_file):
-    _send_email(
-        to_email=to_email,
-        subject="Hyundai Forklift Bakım Teklifi",
-        body="Bakım teklifiniz ektedir.",
-        pdf_file=pdf_file,
-    )
-
+    try:
+        _send_email(
+            to_email=to_email,
+            subject="Hyundai Forklift Bakım Teklifi",
+            body="Bakım teklifiniz ektedir.",
+            pdf_file=pdf_file,
+        )
+    except Exception as e:
+        print("MAIL FAIL:", e)
 
 def send_rental_offer_email(to_email, pdf_file, customer=None, model=None):
-    body = """
-    Sayın Müşterimiz,
+    try:
+        body = """
+        Sayın Müşterimiz,
 
-    Talep etmiş olduğunuz forklift bakım teklifiniz ekte sunulmuştur.
+        Talep etmiş olduğunuz forklift bakım teklifiniz ekte sunulmuştur.
 
-    Sorularınız için bizimle iletişime geçebilirsiniz.
+        Sorularınız için bizimle iletişime geçebilirsiniz.
 
-    Saygılarımızla
-    Hyundai Yetkili Servis
-    """
-    if customer or model:
-        body += f"\n\nMüşteri: {customer or '-'}\nModel: {model or '-'}"
+        Saygılarımızla
+        Hyundai Yetkili Servis
+        """
 
-    if not os.path.exists(pdf_file):
-        raise Exception("PDF dosyası bulunamadı")
+        if customer or model:
+            body += f"\n\nMüşteri: {customer or '-'}\nModel: {model or '-'}"
 
+        if not os.path.exists(pdf_file):
+            print("PDF yok, mail gönderilemedi")
+            return
 
-    _send_email(
-        to_email=to_email,
-        subject="Hyundai Forklift Kiralama Teklifi",
-        body=body,
-        pdf_file=pdf_file,
-    ) 
+        _send_email(
+            to_email=to_email,
+            subject="Hyundai Forklift Kiralama Teklifi",
+            body=body,
+            pdf_file=pdf_file,
+        )
+
+    except Exception as e:
+        print("RENTAL MAIL ERROR:", e)

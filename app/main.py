@@ -310,9 +310,3 @@ def delete_all_users(db: Session = Depends(get_db)):
     db.query(User).delete()
     db.commit()
     return {"message": "ALL USERS DELETED"}
-
-@app.middleware("http")
-async def debug_cors(request, call_next):
-    response = await call_next(request)
-    response.headers["X-DEBUG"] = "CORS_MIDDLEWARE_CALISTI"
-    return response    
