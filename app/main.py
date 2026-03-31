@@ -2,11 +2,11 @@ from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Body
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins = [
-        "http://localhost:5173",   
-        "http://127.0.0.1:5173",
+    allow_origins=[
+        "http://localhost:5173",
     ],
     allow_credentials=True,
     allow_methods=["*"],
@@ -304,3 +304,15 @@ def list_offers(
 
         for o in offers
     ]
+
+@app.delete("/debug-delete-users")
+def delete_all_users(db: Session = Depends(get_db)):
+    db.query(User).delete()
+    db.commit()
+    return {"message": "ALL USERS DELETED"}
+
+@app.middleware("http")
+async def debug_cors(request, call_next):
+    response = await call_next(request)
+    response.headers["X-DEBUG"] = "CORS_MIDDLEWARE_CALISTI"
+    return response    

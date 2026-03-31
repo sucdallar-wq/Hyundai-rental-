@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float
+from sqlalchemy import Column, Integer, String, Float ,Text
 from app.database import Base
 from sqlalchemy import DateTime
 
@@ -8,7 +8,7 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True)
-    password = Column(String)
+    password = Column(Text, nullable=False)
     role = Column(String)
 
 
