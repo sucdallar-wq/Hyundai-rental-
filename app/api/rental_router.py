@@ -12,9 +12,6 @@ from app.services.mail_service import send_rental_offer_email
 
 router = APIRouter(prefix="/rental", tags=["Rental"])
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-PDF_DIR = os.path.join(BASE_DIR, "pdf")
-
 
 # --------------------------------------------------
 # RENTAL CALCULATION
@@ -70,7 +67,7 @@ def rental_scenarios(
 
 
 # --------------------------------------------------
-# RENTAL OFFER AUTO
+# RENTAL OFFER AUTO (hesapla + PDF + mail)
 # --------------------------------------------------
 
 @router.post("/rental-offer-auto")
@@ -79,6 +76,11 @@ def rental_offer_auto(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # Email zorunlu
+    email = payload.get("email", "").strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="E-posta adresi zorunludur")
+
     settings = db.query(Settings).first()
     if not settings:
         raise HTTPException(status_code=500, detail="Settings tanımlı değil")
@@ -91,6 +93,7 @@ def rental_offer_auto(
     model = payload["model"]
     machine_count = payload["machine_count"]
     yearly_hours = payload["yearly_hours"]
+    customer = payload["customer"]
     scenarios = []
 
     for months in [24, 36, 48]:
@@ -113,9 +116,10 @@ def rental_offer_auto(
             "breakdown": result["breakdown_usd"]
         })
 
+    # PDF oluştur
     file_path = create_rental_offer_pdf(
-        customer=payload["customer"],
-        email=payload.get("email"),
+        customer=customer,
+        email=email,
         model=model,
         machine_count=machine_count,
         yearly_hours=yearly_hours,
@@ -127,9 +131,10 @@ def rental_offer_auto(
     )
     file_name = os.path.basename(file_path)
 
+    # Veritabanına kaydet
     offer = RentalOffer(
-        customer=payload["customer"],
-        email=payload.get("email"),
+        customer=customer,
+        email=email,
         model=model,
         machine_count=machine_count,
         yearly_hours=yearly_hours,
@@ -143,33 +148,19 @@ def rental_offer_auto(
     db.commit()
     db.refresh(offer)
 
+    # Mail gönder (hata olsa bile hesaplama sonucu döner)
+    mail_status = "gönderildi"
+    try:
+        send_rental_offer_email(email, file_path, customer=customer, model=model)
+    except Exception as e:
+        print(f"RENTAL MAIL ERROR: {e}")
+        mail_status = "gönderilemedi"
+
     return {
         "survey_score": survey_score,
         "usage_factor": usage_factor,
         "residual_factor": residual_factor,
         "scenarios": scenarios,
-        "pdf_file": file_name
+        "pdf_file": file_name,
+        "mail_status": mail_status
     }
-
-
-# --------------------------------------------------
-# SEND MAIL
-# --------------------------------------------------
-
-@router.post("/send-mail")
-def rental_send_mail(
-    email: str,
-    pdf_file: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    file_path = os.path.join(PDF_DIR, pdf_file)
-
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="PDF bulunamadı")
-
-    try:
-        send_rental_offer_email(email, file_path)
-        return {"status": "mail gönderildi"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
