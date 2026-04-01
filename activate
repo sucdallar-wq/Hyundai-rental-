@@ -1,0 +1,5 @@
+[33m0b6c9d7[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m fix: mail port 587 starttls deneniyor
+[33m57ff7a7[m fix: imports, cors, auth, database guncellendi
+[33me4c9b3e[m disable rental email
+[33m4f755d1[m force redeploy cors fix
+[33m3fd54f9[m cors final

@@ -38,16 +38,10 @@ from app.services.survey_service import calculate_usage_factor, calculate_residu
 
 app = FastAPI()
 
-# Frontend URL'lerini buraya ekle (Railway deploy URL'n dahil)
-ALLOWED_ORIGINS = [
-    "http://localhost:5173",
-    os.getenv("FRONTEND_URL", ""),   # Railway'de FRONTEND_URL değişkenini set et
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o for o in ALLOWED_ORIGINS if o],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
