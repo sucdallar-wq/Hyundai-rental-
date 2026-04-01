@@ -1,111 +1,93 @@
 import os
-import smtplib
-from email.message import EmailMessage
+import base64
+import urllib.request
+import urllib.error
+import json
 from dotenv import load_dotenv
 
 load_dotenv()
 
 
-def _get_smtp_settings():
-    smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "587"))
-    smtp_user = os.getenv("SMTP_USER")
-    smtp_pass = os.getenv("SMTP_PASS")
-    smtp_from = os.getenv("SMTP_FROM", smtp_user)
+def _send_email(to_email, subject, body, pdf_file):
+    api_key = os.getenv("RESEND_API_KEY")
+    from_email = os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "onboarding@resend.dev"))
 
-    if not smtp_user:
-        raise ValueError("SMTP_USER tanımlı değil")
-    if not smtp_pass:
-        raise ValueError("SMTP_PASS tanımlı değil")
+    if not api_key:
+        raise ValueError("RESEND_API_KEY tanımlı değil")
 
-    return {
-        "host": smtp_host,
-        "port": smtp_port,
-        "user": smtp_user,
-        "password": smtp_pass,
-        "from_email": smtp_from,
+    # PDF'i base64'e çevir
+    with open(pdf_file, "rb") as f:
+        pdf_base64 = base64.b64encode(f.read()).decode("utf-8")
+
+    filename = os.path.basename(pdf_file)
+
+    payload = {
+        "from": f"Hyundai Forklift <{from_email}>",
+        "to": [to_email],
+        "subject": subject,
+        "text": body,
+        "attachments": [
+            {
+                "filename": filename,
+                "content": pdf_base64,
+            }
+        ],
     }
 
+    data = json.dumps(payload).encode("utf-8")
 
-def _send_email(to_email, subject, body, pdf_file):
-    settings = _get_smtp_settings()
-
-    msg = EmailMessage()
-    msg["Subject"] = subject
-    msg["From"] = settings["from_email"]
-    msg["To"] = to_email
-    msg.set_content(body)
-
-    with open(pdf_file, "rb") as f:
-        msg.add_attachment(
-            f.read(),
-            maintype="application",
-            subtype="pdf",
-            filename=os.path.basename(pdf_file)
-        )
-
-    # Önce port 587 (STARTTLS) dene, olmazsa 465 (SSL) dene
-    try:
-        with smtplib.SMTP(settings["host"], 587, timeout=20) as smtp:
-            smtp.ehlo()
-            smtp.starttls()
-            smtp.login(settings["user"], settings["password"])
-            smtp.send_message(msg)
-            print("MAIL SENT via port 587")
-            return
-    except Exception as e:
-        print(f"MAIL ERROR port 587: {e}")
+    req = urllib.request.Request(
+        "https://api.resend.com/emails",
+        data=data,
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
 
     try:
-        with smtplib.SMTP_SSL(settings["host"], 465, timeout=20) as smtp:
-            smtp.login(settings["user"], settings["password"])
-            smtp.send_message(msg)
-            print("MAIL SENT via port 465")
-            return
+        with urllib.request.urlopen(req, timeout=20) as res:
+            response = json.loads(res.read().decode("utf-8"))
+            print(f"MAIL SENT: {response}")
+    except urllib.error.HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        print(f"MAIL ERROR {e.code}: {error_body}")
+        raise RuntimeError(f"Mail gönderilemedi: {error_body}")
     except Exception as e:
-        print(f"MAIL ERROR port 465: {e}")
+        print(f"MAIL ERROR: {e}")
         raise RuntimeError(f"Mail gönderilemedi: {e}")
 
 
 def send_offer_email(to_email, pdf_file):
-    try:
-        _send_email(
-            to_email=to_email,
-            subject="Hyundai Forklift Bakım Teklifi",
-            body="Bakım teklifiniz ektedir.",
-            pdf_file=pdf_file,
-        )
-    except Exception as e:
-        print(f"MAIL FAIL: {e}")
-        raise
+    _send_email(
+        to_email=to_email,
+        subject="Hyundai Forklift Bakım Teklifi",
+        body="Bakım teklifiniz ektedir.",
+        pdf_file=pdf_file,
+    )
 
 
 def send_rental_offer_email(to_email, pdf_file, customer=None, model=None):
-    try:
-        body = """
-Sayın Müşterimiz,
+    body = """Sayın Müşterimiz,
 
 Talep etmiş olduğunuz forklift kiralama teklifiniz ekte sunulmuştur.
 
 Sorularınız için bizimle iletişime geçebilirsiniz.
 
 Saygılarımızla
-Hyundai Yetkili Servis
-        """
+Hyundai Yetkili Servis"""
 
-        if customer or model:
-            body += f"\n\nMüşteri: {customer or '-'}\nModel: {model or '-'}"
+    if customer or model:
+        body += f"\n\nMüşteri: {customer or '-'}\nModel: {model or '-'}"
 
-        if not os.path.exists(pdf_file):
-            print("PDF yok, mail gönderilemedi")
-            return
+    if not os.path.exists(pdf_file):
+        print("PDF yok, mail gönderilemedi")
+        return
 
-        _send_email(
-            to_email=to_email,
-            subject="Hyundai Forklift Kiralama Teklifi",
-            body=body,
-            pdf_file=pdf_file,
-        )
-    except Exception as e:
-        print(f"RENTAL MAIL ERROR: {e}")
-        raise
+    _send_email(
+        to_email=to_email,
+        subject="Hyundai Forklift Kiralama Teklifi",
+        body=body,
+        pdf_file=pdf_file,
+    )
