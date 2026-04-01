@@ -1,7 +1,6 @@
 import os
 import smtplib
 from email.message import EmailMessage
-
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -9,7 +8,7 @@ load_dotenv()
 
 def _get_smtp_settings():
     smtp_host = os.getenv("SMTP_HOST", "smtp.gmail.com")
-    smtp_port = int(os.getenv("SMTP_PORT", "465"))
+    smtp_port = int(os.getenv("SMTP_PORT", "587"))
     smtp_user = os.getenv("SMTP_USER")
     smtp_pass = os.getenv("SMTP_PASS")
     smtp_from = os.getenv("SMTP_FROM", smtp_user)
@@ -45,13 +44,28 @@ def _send_email(to_email, subject, body, pdf_file):
             filename=os.path.basename(pdf_file)
         )
 
+    # Önce port 587 (STARTTLS) dene, olmazsa 465 (SSL) dene
     try:
-        with smtplib.SMTP_SSL(settings["host"], settings["port"], timeout=20) as smtp:
+        with smtplib.SMTP(settings["host"], 587, timeout=20) as smtp:
+            smtp.ehlo()
+            smtp.starttls()
             smtp.login(settings["user"], settings["password"])
             smtp.send_message(msg)
-
+            print("MAIL SENT via port 587")
+            return
     except Exception as e:
-        print("MAIL ERROR:", str(e))   # ❗ raise yok
+        print(f"MAIL ERROR port 587: {e}")
+
+    try:
+        with smtplib.SMTP_SSL(settings["host"], 465, timeout=20) as smtp:
+            smtp.login(settings["user"], settings["password"])
+            smtp.send_message(msg)
+            print("MAIL SENT via port 465")
+            return
+    except Exception as e:
+        print(f"MAIL ERROR port 465: {e}")
+        raise RuntimeError(f"Mail gönderilemedi: {e}")
+
 
 def send_offer_email(to_email, pdf_file):
     try:
@@ -62,19 +76,21 @@ def send_offer_email(to_email, pdf_file):
             pdf_file=pdf_file,
         )
     except Exception as e:
-        print("MAIL FAIL:", e)
+        print(f"MAIL FAIL: {e}")
+        raise
+
 
 def send_rental_offer_email(to_email, pdf_file, customer=None, model=None):
     try:
         body = """
-        Sayın Müşterimiz,
+Sayın Müşterimiz,
 
-        Talep etmiş olduğunuz forklift bakım teklifiniz ekte sunulmuştur.
+Talep etmiş olduğunuz forklift kiralama teklifiniz ekte sunulmuştur.
 
-        Sorularınız için bizimle iletişime geçebilirsiniz.
+Sorularınız için bizimle iletişime geçebilirsiniz.
 
-        Saygılarımızla
-        Hyundai Yetkili Servis
+Saygılarımızla
+Hyundai Yetkili Servis
         """
 
         if customer or model:
@@ -90,6 +106,6 @@ def send_rental_offer_email(to_email, pdf_file, customer=None, model=None):
             body=body,
             pdf_file=pdf_file,
         )
-
     except Exception as e:
-        print("RENTAL MAIL ERROR:", e)
+        print(f"RENTAL MAIL ERROR: {e}")
+        raise
