@@ -9,11 +9,12 @@ load_dotenv()
 
 
 def _send_email(to_email, subject, body, pdf_file):
-    api_key = os.getenv("RESEND_API_KEY")
-    from_email = os.getenv("SMTP_FROM", os.getenv("SMTP_USER", "onboarding@resend.dev"))
+    api_key = os.getenv("BREVO_API_KEY")
+    from_email = os.getenv("SMTP_USER", "s.ucdallar@gmail.com")
+    from_name = "Hyundai Forklift"
 
     if not api_key:
-        raise ValueError("RESEND_API_KEY tanımlı değil")
+        raise ValueError("BREVO_API_KEY tanımlı değil")
 
     # PDF'i base64'e çevir
     with open(pdf_file, "rb") as f:
@@ -22,13 +23,16 @@ def _send_email(to_email, subject, body, pdf_file):
     filename = os.path.basename(pdf_file)
 
     payload = {
-        "from": f"Hyundai Forklift <{from_email}>",
-        "to": [to_email],
+        "sender": {
+            "name": from_name,
+            "email": from_email
+        },
+        "to": [{"email": to_email}],
         "subject": subject,
-        "text": body,
-        "attachments": [
+        "textContent": body,
+        "attachment": [
             {
-                "filename": filename,
+                "name": filename,
                 "content": pdf_base64,
             }
         ],
@@ -37,11 +41,12 @@ def _send_email(to_email, subject, body, pdf_file):
     data = json.dumps(payload).encode("utf-8")
 
     req = urllib.request.Request(
-        "https://api.resend.com/emails",
+        "https://api.brevo.com/v3/smtp/email",
         data=data,
         headers={
-            "Authorization": f"Bearer {api_key}",
+            "api-key": api_key,
             "Content-Type": "application/json",
+            "Accept": "application/json",
         },
         method="POST",
     )
