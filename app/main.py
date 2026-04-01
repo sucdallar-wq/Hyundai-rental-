@@ -1,41 +1,64 @@
 from fastapi import FastAPI, Depends, HTTPException, File, UploadFile, Body
 from fastapi.middleware.cors import CORSMiddleware
-
-app = FastAPI()
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 import os
-from app.auth import get_db, get_current_user 
-from app.models import User
+
+from app.auth import get_db, get_current_user
 from app.database import engine, Base
-from fastapi import File, UploadFile
+
+# Models
+from app.models import (
+    User,
+    MaintenancePackage,
+    MaintenanceLine,
+    TireCost,
+    RentalOffer,
+)
+
+# Routers
 from app.api.auth_router import router as auth_router
 from app.api.rental_router import router as rental_router
 from app.api.maintenance_router import router as maintenance_router
 from app.api.offer_router import router as offer_router
 from app.api.excel_router import router as excel_router
-from app.services.rental_service import RentalInputs
-from app.services.rental_service import calculate_rental_offer
 from app.api.settings_router import router as settings_router
 
+# Services
+from app.services.rental_service import RentalInputs, calculate_rental_offer
+from app.services.pdf_service import create_maintenance_pdf
+from app.services.mail_service import send_offer_email
+from app.services.survey_service import calculate_usage_factor, calculate_residual_factor
 
+# --------------------------------------------------
+# APP & CORS
+# --------------------------------------------------
 
+app = FastAPI()
+
+# Frontend URL'lerini buraya ekle (Railway deploy URL'n dahil)
+ALLOWED_ORIGINS = [
+    "http://localhost:5173",
+    os.getenv("FRONTEND_URL", ""),   # Railway'de FRONTEND_URL değişkenini set et
+]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[o for o in ALLOWED_ORIGINS if o],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --------------------------------------------------
+# STATIC & DB
+# --------------------------------------------------
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PDF_DIR = os.path.join(BASE_DIR, "pdf")
+os.makedirs(PDF_DIR, exist_ok=True)
 
 app.mount("/pdf", StaticFiles(directory=PDF_DIR), name="pdf")
 
@@ -47,13 +70,6 @@ app.include_router(excel_router)
 app.include_router(settings_router)
 
 Base.metadata.create_all(bind=engine)
-
-
-
-
-@app.get("/")
-def root():
-    return {"message": "System running"}
 
 # --------------------------------------------------
 # ROOT
@@ -95,13 +111,12 @@ def get_maintenance_cost(
 # --------------------------------------------------
 
 @app.get("/maintenance-lines")
-def get_maintenance_lines(
+def get_maintenance_lines_route(
     model: str,
     hours: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-
     recete_id = f"{model}_{hours}"
 
     lines = db.query(MaintenanceLine).filter(
@@ -137,7 +152,6 @@ def maintenance_offer_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-
     recete_id = f"{model}_{hours}"
 
     lines = db.query(MaintenanceLine).filter(
@@ -147,21 +161,20 @@ def maintenance_offer_pdf(
     if not lines:
         raise HTTPException(status_code=404, detail="Recete bulunamadı")
 
-    file_name = create_maintenance_pdf(
+    file_path = create_maintenance_pdf(
         recete_id,
         lines,
         discount,
         customer,
         model,
-        hours
+        hours,
+        current_user.username
     )
 
-    file_path = os.path.join(PDF_DIR, file_name)
-    
     return FileResponse(
-    file_path,
-    media_type="application/pdf",
-    filename=file_name
+        file_path,
+        media_type="application/pdf",
+        filename=os.path.basename(file_path)
     )
 
 
@@ -179,23 +192,26 @@ def send_offer_email_api(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-
     recete_id = f"{model}_{hours}"
 
     lines = db.query(MaintenanceLine).filter(
         MaintenanceLine.recete_id == recete_id
     ).all()
 
-    file_name = create_maintenance_pdf(
+    if not lines:
+        raise HTTPException(status_code=404, detail="Recete bulunamadı")
+
+    file_path = create_maintenance_pdf(
         recete_id,
         lines,
         discount,
         customer,
         model,
-        hours
+        hours,
+        current_user.username
     )
 
-    send_offer_email(email, file_name)
+    send_offer_email(email, file_path)
 
     return {"message": "Teklif email ile gönderildi"}
 
@@ -210,11 +226,8 @@ class SurveyInput(BaseModel):
 
 @app.post("/survey-calculate")
 def survey_calculate(payload: SurveyInput):
-
     score = sum(payload.answers)
-
     usage_factor = calculate_usage_factor(score)
-
     residual_factor = calculate_residual_factor(usage_factor)
 
     return {
@@ -224,34 +237,16 @@ def survey_calculate(payload: SurveyInput):
     }
 
 
-
-
-
-
-
 # --------------------------------------------------
-# DEBUG TIRES
+# MAINTENANCE HOURS
 # --------------------------------------------------
 
-@app.get("/debug-tires")
-def debug_tires(db: Session = Depends(get_db)):
-
-    tires = db.query(TireCost).all()
-
-    return [
-        {
-            "model": t.machine_model,
-            "tire_price_usd": t.tire_price_usd
-        }
-        for t in tires
-    ]
 @app.get("/maintenance-hours")
 def get_maintenance_hours(
     model: str,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-
     lines = db.query(MaintenanceLine).filter(
         MaintenanceLine.recete_id.like(f"{model}_%")
     ).all()
@@ -260,13 +255,11 @@ def get_maintenance_hours(
         raise HTTPException(status_code=404, detail="Model için bakım reçetesi bulunamadı")
 
     hours = set()
-
     for l in lines:
-
         try:
             hour = int(l.recete_id.split("_")[1])
             hours.add(hour)
-        except:
+        except Exception:
             continue
 
     return {
@@ -274,25 +267,21 @@ def get_maintenance_hours(
         "available_hours": sorted(list(hours))
     }
 
-@app.get("/debug-recetes")
-def debug_recetes(db: Session = Depends(get_db)):
 
-    lines = db.query(MaintenanceLine.recete_id).distinct().all()
-
-    return [l[0] for l in lines]
+# --------------------------------------------------
+# OFFERS
+# --------------------------------------------------
 
 @app.get("/offers")
 def list_offers(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-
     offers = db.query(RentalOffer).order_by(
         RentalOffer.created_at.desc()
     ).all()
 
     return [
-
         {
             "id": o.id,
             "customer": o.customer,
@@ -301,12 +290,29 @@ def list_offers(
             "monthly_rent": o.monthly_rent,
             "created": o.created_at
         }
-
         for o in offers
     ]
 
-@app.delete("/debug-delete-users")
-def delete_all_users(db: Session = Depends(get_db)):
-    db.query(User).delete()
-    db.commit()
-    return {"message": "ALL USERS DELETED"}
+
+# --------------------------------------------------
+# DEBUG (sadece geliştirme ortamında kullan)
+# --------------------------------------------------
+
+DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+
+if DEBUG_MODE:
+    @app.get("/debug-tires")
+    def debug_tires(db: Session = Depends(get_db)):
+        tires = db.query(TireCost).all()
+        return [{"model": t.machine_model, "tire_price_usd": t.tire_price_usd} for t in tires]
+
+    @app.get("/debug-recetes")
+    def debug_recetes(db: Session = Depends(get_db)):
+        lines = db.query(MaintenanceLine.recete_id).distinct().all()
+        return [l[0] for l in lines]
+
+    @app.delete("/debug-delete-users")
+    def delete_all_users(db: Session = Depends(get_db)):
+        db.query(User).delete()
+        db.commit()
+        return {"message": "ALL USERS DELETED"}

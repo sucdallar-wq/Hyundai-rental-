@@ -161,7 +161,7 @@ def rental_offer_auto(
         monthly_rent=scenarios[1]["monthly_per_machine"],
         pdf_file=file_name
     )
-    
+    print("RENTAL ENDPOINT HIT")
     print(current_user.__dict__)
     db.add(offer)
     db.commit()
