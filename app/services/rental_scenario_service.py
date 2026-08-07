@@ -3,7 +3,7 @@ from app.services.rental_service import calculate_rental_offer
 
 def calculate_rental_scenarios(inputs, db):
 
-    scenarios = [24, 36, 48]
+    scenarios = [24, 36, 48, 60]
 
     results = []
 

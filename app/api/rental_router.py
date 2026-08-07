@@ -96,7 +96,7 @@ def rental_offer_auto(
     customer = payload["customer"]
     scenarios = []
 
-    for months in [24, 36, 48]:
+    for months in [24, 36, 48, 60]:
         inputs = RentalInputs(
             model=model,
             machine_count=machine_count,
