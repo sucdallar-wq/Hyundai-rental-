@@ -218,3 +218,5 @@ def rental_send_mail(
         return {"status": "mail gönderildi"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
