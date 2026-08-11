@@ -152,25 +152,66 @@ def rental_offer_auto(
         "usage_factor": usage_factor,
         "residual_factor": residual_factor,
         "scenarios": scenarios,
-        "pdf_file": file_name,
+        "offer_id": offer.id,
     }
 
 
 # --------------------------------------------------
-# SEND MAIL (ayrı buton)
+# SEND MAIL (ayrı buton - offer_id ile PDF yeniden oluştur)
 # --------------------------------------------------
 
 @router.post("/send-mail")
 def rental_send_mail(
     email: str,
-    pdf_file: str,
+    offer_id: int,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    file_path = os.path.join(PDF_DIR, pdf_file)
+    from app.services.pdf_service import create_rental_offer_pdf
+    from app.services.survey_service import calculate_usage_factor, calculate_residual_factor
+    from app.services.rental_service import RentalInputs, calculate_rental_offer
 
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="PDF bulunamadı — önce teklif hesaplayınız")
+    offer = db.query(RentalOffer).filter(RentalOffer.id == offer_id).first()
+    if not offer:
+        raise HTTPException(status_code=404, detail="Teklif bulunamadı")
+
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=500, detail="Settings tanımlı değil")
+
+    scenarios = []
+    for months in [24, 36, 48, 60]:
+        inputs = RentalInputs(
+            model=offer.model,
+            machine_count=offer.machine_count,
+            yearly_hours=offer.yearly_hours,
+            months=months,
+            interest_rate=settings.interest_rate,
+            insurance_rate=settings.insurance_rate,
+            profit_margin=settings.profit_margin,
+            management_fee_monthly=settings.management_fee,
+            usage_factor=offer.usage_factor,
+            residual_factor=offer.residual_factor,
+        )
+        result = calculate_rental_offer(inputs, db)
+        scenarios.append({
+            "months": months,
+            "monthly_per_machine": result["result"]["monthly_rent_per_machine"],
+            "breakdown": result["breakdown_usd"]
+        })
+
+    file_path = create_rental_offer_pdf(
+        customer=offer.customer,
+        email=email,
+        model=offer.model,
+        machine_count=offer.machine_count,
+        yearly_hours=offer.yearly_hours,
+        survey_score=offer.survey_score,
+        usage_factor=offer.usage_factor,
+        residual_factor=offer.residual_factor,
+        scenarios=scenarios,
+        salesman=current_user.username
+    )
 
     try:
         send_rental_offer_email(email, file_path)
