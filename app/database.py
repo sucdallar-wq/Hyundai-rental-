@@ -4,7 +4,7 @@ import os
 
 # Railway'de DATABASE_URL otomatik gelir
 # Local'de SQLite kullanmaya devam eder
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./test.db")
+DATABASE_URL = "postgresql://postgres:JqKQMrxDdVGgXAbsjkEqQMqvljugErKT@hopper.proxy.rlwy.net:34902/railway"
 
 # Railway PostgreSQL URL'si "postgres://" ile başlar,
 # SQLAlchemy "postgresql://" ister — otomatik düzeltiyoruz
