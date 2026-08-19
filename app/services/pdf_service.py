@@ -19,7 +19,7 @@ pdfmetrics.registerFont(TTFont("DejaVu-Bold", os.path.join(FONT_DIR, "DejaVuSans
 
 FONT_NAME = "DejaVu"
 FONT_PATH = os.path.join(BASE_DIR, "fonts", "DejaVuSans.ttf")
-LOGO_PATH = os.path.join(BASE_DIR, "assets", "logo3.png")
+LOGO_PATH = os.path.join(BASE_DIR, "app", "assets", "logo3.png")
 
 
 def _register_font():
