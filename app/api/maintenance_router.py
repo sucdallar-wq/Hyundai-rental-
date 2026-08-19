@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
+from typing import Optional
 from fastapi.responses import FileResponse
 
 from app.auth import get_db, get_current_user
@@ -13,8 +14,6 @@ import os
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PDF_DIR = os.path.join(BASE_DIR, "pdf")
-
-
 
 router = APIRouter(prefix="/maintenance", tags=["Maintenance"])
 
@@ -33,6 +32,8 @@ class MaintenancePdfRequest(BaseModel):
     model: str
     hours: int
     discount: float = 0
+    road_km: Optional[float] = 0
+    road_rate_usd: Optional[float] = 0
 
 
 # --------------------------------------------------
@@ -45,7 +46,6 @@ def maintenance_calc(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-
     lines = get_maintenance_lines(db, req.model, req.hours)
 
     if not lines:
@@ -56,7 +56,6 @@ def maintenance_calc(
 
     for l in lines:
         total += l.line_total
-
         rows.append({
             "code": l.part_code,
             "part_name": l.description,
@@ -82,7 +81,6 @@ def maintenance_pdf(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-
     lines = get_maintenance_lines(db, req.model, req.hours)
 
     if not lines:
@@ -97,14 +95,17 @@ def maintenance_pdf(
         req.customer,
         req.model,
         req.hours,
-        current_user.username
+        current_user.username,
+        road_km=req.road_km,
+        road_rate_usd=req.road_rate_usd,
     )
 
     return FileResponse(
-       file_path,
-       media_type="application/pdf",
-       filename=os.path.basename(file_path)
+        file_path,
+        media_type="application/pdf",
+        filename=os.path.basename(file_path)
     )
+
 
 # --------------------------------------------------
 # SEND EMAIL
@@ -119,6 +120,9 @@ def maintenance_send_mail(
 ):
     lines = get_maintenance_lines(db, req.model, req.hours)
 
+    if not lines:
+        raise HTTPException(status_code=404, detail="Bakım reçetesi bulunamadı")
+
     file_path = create_maintenance_pdf(
         f"{req.model}_{req.hours}",
         lines,
@@ -126,9 +130,11 @@ def maintenance_send_mail(
         req.customer,
         req.model,
         req.hours,
-        current_user.username
+        current_user.username,
+        road_km=req.road_km,
+        road_rate_usd=req.road_rate_usd,
     )
 
     send_offer_email(email, file_path)
 
-    return {"status":"mail sent"}
+    return {"status": "mail sent"}
