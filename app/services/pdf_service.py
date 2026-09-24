@@ -160,7 +160,7 @@ def create_maintenance_pdf(
     table.setStyle(TableStyle(table_style))
 
     # --- KARTLARIN OTOMATİK BÖLÜNMESİ (SPLIT MANTIĞI) ---
-    available_height = y - 120  # Alt boşluk (Footer için yer bırakıyoruz)
+    available_height = y - 60  # Alt boşluk (Footer için yer bırakıyoruz)
     
     # Tabloyu mevcut alana göre bölüyoruz
     chunks = table.split(530, available_height)
