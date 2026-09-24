@@ -69,7 +69,7 @@ def _draw_footer(c, salesman=None):
 
 
 # =========================================================
-# MAINTENANCE PDF
+# MAINTENANCE PDF (DÜZELTİLMİŞ)
 # =========================================================
 def create_maintenance_pdf(
     recete_id, lines, discount, customer,
@@ -86,6 +86,7 @@ def create_maintenance_pdf(
     c = canvas.Canvas(file_path, pagesize=A4)
     width, height = A4
 
+    # 1. Sayfa Başlığı
     y = _draw_banner(c, "Bakım Teklifi")
 
     teklif_no = f"HYD-MNT-{datetime.now().strftime('%Y%m%d%H%M%S')}"
@@ -149,7 +150,8 @@ def create_maintenance_pdf(
         ("ALIGN", (4, 1), (4, -1), "RIGHT"),
         ("FONTNAME", (0, 1), (-1, -1), "DejaVu"),
         ("FONTSIZE", (0, 0), (-1, -1), 9),
-        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),  # Padding 6'dan 4'e düşürüldü (Sıkıştırma)
+        ("TOPPADDING", (0, 0), (-1, -1), 4),
     ]
     if road_km > 0 and road_rate_usd > 0:
         table_style.append(("BACKGROUND", (0, row_count - 1), (-1, row_count - 1), HexColor("#e8f0ff")))
@@ -157,17 +159,37 @@ def create_maintenance_pdf(
     table = Table(data, colWidths=[80, 240, 50, 60, 90])
     table.setStyle(TableStyle(table_style))
 
-    w, h = table.wrap(0, 0)
-
-    if y - h < 140:
+    # --- KARTLARIN OTOMATİK BÖLÜNMESİ (SPLIT MANTIĞI) ---
+    available_height = y - 120  # Alt boşluk (Footer için yer bırakıyoruz)
+    
+    # Tabloyu mevcut alana göre bölüyoruz
+    chunks = table.split(530, available_height)
+    
+    if len(chunks) > 1:
+        # Eğer tablo ikiye bölünüyorsa: İlk parçayı çiziyoruz
+        first_chunk = chunks[0]
+        w, h = first_chunk.wrap(0, 0)
+        first_chunk.drawOn(c, 40, y - h)
+        
+        # 1. Sayfa Footer'ı bas ve kapat
         _draw_footer(c, salesman)
         c.showPage()
-        y = _draw_banner(c, "Bakım Teklifi")
-        y -= 40
+        
+        # 2. Sayfada sadece temiz bir başlangıç yapıyoruz (KOCA HEADER'I BASMIYORUZ!)
+        y = height - 50 
+        
+        # İkinci parçayı çiziyoruz
+        second_chunk = chunks[1]
+        w, h = second_chunk.wrap(0, 0)
+        second_chunk.drawOn(c, 40, y - h)
+        y = y - h - 25
+    else:
+        # Eğer tablo tek sayfaya sığıyorsa normal çizim yap
+        w, h = table.wrap(0, 0)
+        table.drawOn(c, 40, y - h)
+        y = y - h - 25
 
-    table.drawOn(c, 40, y - h)
-    y = y - h - 25
-
+    # Toplam Alanı ve Alt Çizgi
     c.line(40, y, 550, y)
     y -= 20
 
