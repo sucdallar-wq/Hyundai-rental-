@@ -215,9 +215,12 @@ def create_maintenance_pdf(
 # =========================================================
 # RENTAL PDF
 # =========================================================
+# app/services/pdf_service.py içindeki ilgili fonksiyonu bununla değiştirin:
+
 def create_rental_offer_pdf(
     customer, email, model, machine_count, yearly_hours,
-    survey_score, usage_factor, residual_factor, scenarios, salesman=None
+    survey_score, usage_factor, residual_factor, scenarios, salesman=None,
+    custom_price=None  # ⭐ Yeni parametre eklendi
 ):
     os.makedirs(PDF_DIR, exist_ok=True)
 
@@ -244,6 +247,11 @@ def create_rental_offer_pdf(
     c.drawString(300, y, f"Adet : {machine_count}")
     y -= 20
     c.drawString(40, y, f"Yıllık Kullanım : {yearly_hours} saat")
+    
+    # ⭐ Eğer arayüzden özel bir fiyat girildiyse bunu PDF üzerine basıyoruz:
+    if custom_price and float(custom_price) > 0:
+        c.drawString(300, y - 20, f"Teklif Birim Bedeli: {float(custom_price):,.2f} USD")
+        y -= 20
 
     risk_label = "HAFİF"
     risk_color = HexColor("#27ae60")

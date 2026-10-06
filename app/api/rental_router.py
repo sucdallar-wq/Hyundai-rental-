@@ -25,8 +25,7 @@ def rental_calculate(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # ⭐ Güvenlik Önlemi: Frontend'den gelebilecek tüm olası fiyat anahtarlarını kontrol et
-    custom_price = payload.get("purchase_price") or payload.get("price") or payload.get("machine_price") or payload.get("custom_price")
+    custom_price = payload.get("purchase_price")
     
     inp = RentalInputs(
         model=payload.get("model"),
@@ -38,7 +37,7 @@ def rental_calculate(
         profit_margin=float(payload.get("profit_margin", 10)),
         management_fee_monthly=float(payload.get("management_fee_monthly", 50)),
         usage_factor=float(payload.get("usage_factor", 1.0)),
-        purchase_price=custom_price if custom_price else None,
+        purchase_price=float(custom_price) if custom_price else None,
     )
     return calculate_rental_offer(inp, db)
 
@@ -51,7 +50,7 @@ def rental_scenarios(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    custom_price = payload.get("purchase_price") or payload.get("price") or payload.get("machine_price") or payload.get("custom_price")
+    custom_price = payload.get("purchase_price")
     
     inp = RentalInputs(
         model=payload["model"],
@@ -63,7 +62,7 @@ def rental_scenarios(
         profit_margin=payload["profit_margin"],
         management_fee_monthly=payload["management_fee_monthly"],
         usage_factor=payload["usage_factor"],
-        purchase_price=custom_price if custom_price else None,
+        purchase_price=float(custom_price) if custom_price else None,
     )
     scenarios = calculate_rental_scenarios(inp, db)
     return {
@@ -73,7 +72,7 @@ def rental_scenarios(
     }
 
 # --------------------------------------------------
-# RENTAL OFFER AUTO (Hesapla + PDF Oluştur)
+# RENTAL OFFER AUTO
 # --------------------------------------------------
 @router.post("/rental-offer-auto")
 def rental_offer_auto(
@@ -96,13 +95,12 @@ def rental_offer_auto(
     customer = payload["customer"]
     email = payload.get("email", "").strip()
     
-    # ⭐ Tüm isim uyuşmazlıklarını ortadan kaldırıyoruz:
-    custom_price = payload.get("purchase_price") or payload.get("price") or payload.get("machine_price") or payload.get("custom_price")
+    custom_price = payload.get("purchase_price")
     if custom_price is not None:
         custom_price = float(custom_price)
 
     scenarios = []
-    # 🛠️ Liste hatası düzeltildi: [24, 36, 48, 60] eklendi
+    # Düzeltilmiş döngü dizisi
     for months in [24, 36, 48, 60]:
         inputs = RentalInputs(
             model=model,
@@ -124,13 +122,12 @@ def rental_offer_auto(
             "breakdown": result["breakdown_usd"]
         })
 
-    # Önerilen plan (36 Ay) kirasını çekelim
     optimum_monthly_rent = scenarios[1]["monthly_per_machine"]
     for s in scenarios:
         if s["months"] == 36:
             optimum_monthly_rent = s["monthly_per_machine"]
 
-    # PDF'i doğru senaryo dizisi ile oluşturuyoruz
+    # PDF oluşturulurken custom_price değerini de parametre olarak gönderiyoruz
     file_path = create_rental_offer_pdf(
         customer=customer,
         email=email,
@@ -141,7 +138,8 @@ def rental_offer_auto(
         usage_factor=usage_factor,
         residual_factor=residual_factor,
         scenarios=scenarios,
-        salesman=current_user.username
+        salesman=current_user.username,
+        custom_price=custom_price  # ⭐ Ekledik
     )
     file_name = os.path.basename(file_path)
 
@@ -170,7 +168,7 @@ def rental_offer_auto(
     }
 
 # --------------------------------------------------
-# SEND MAIL (Mevcut Doğru PDF'i Bozmadan Gönderen Sistem)
+# SEND MAIL
 # --------------------------------------------------
 @router.post("/send-mail")
 def rental_send_mail(
@@ -183,46 +181,12 @@ def rental_send_mail(
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    # 💡 KÖKTEN ÇÖZÜM: Mail atarken PDF'i sıfırdan üretip bozmak yerine, 
-    # yukarıda doğru fiyatla (20.247 USD) üretilmiş olan hazır diskteki PDF dosyasını direkt ekliyoruz.
+    # 💡 KESİN ÇÖZÜM: Mail atarken sıfırdan hatalı hesaplama yapmak yerine, 
+    # yukarıda girilen manuel fiyatla üretilmiş diskteki hazır PDF dosyasını direkt ekliyoruz.
     file_path = os.path.join(PDF_DIR, offer.pdf_file)
 
-    # Dosya bir şekilde diskten silindiyse koruma amaçlı yedek üretim (fallback)
     if not os.path.exists(file_path):
-        settings = db.query(Settings).first()
-        scenarios = []
-        for months in [24, 36, 48, 60]:
-            inputs = RentalInputs(
-                model=offer.model,
-                machine_count=offer.machine_count,
-                yearly_hours=offer.yearly_hours,
-                months=months,
-                interest_rate=settings.interest_rate if settings else 18,
-                insurance_rate=settings.insurance_rate if settings else 2.5,
-                profit_margin=settings.profit_margin if settings else 10,
-                management_fee_monthly=settings.management_fee if settings else 50,
-                usage_factor=offer.usage_factor,
-                residual_factor=offer.residual_factor,
-            )
-            result = calculate_rental_offer(inputs, db)
-            scenarios.append({
-                "months": months,
-                "monthly_per_machine": result["result"]["monthly_rent_per_machine"],
-                "breakdown": result["breakdown_usd"]
-            })
-
-        file_path = create_rental_offer_pdf(
-            customer=offer.customer,
-            email=email,
-            model=offer.model,
-            machine_count=offer.machine_count,
-            yearly_hours=offer.yearly_hours,
-            survey_score=offer.survey_score,
-            usage_factor=offer.usage_factor,
-            residual_factor=offer.residual_factor,
-            scenarios=scenarios,
-            salesman=current_user.username
-        )
+        raise HTTPException(status_code=404, detail="Teklife ait hazır PDF dosyası sunucuda bulunamadı.")
 
     try:
         send_rental_offer_email(email, file_path)
