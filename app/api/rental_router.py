@@ -197,7 +197,7 @@ def rental_send_mail(
     if not os.path.exists(file_path):
         settings = db.query(Settings).first()
         scenarios = []
-        for months in:
+        for months in [24, 36, 48, 60]:
             inputs = RentalInputs(
                 model=offer.model,
                 machine_count=offer.machine_count,
