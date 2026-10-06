@@ -3,7 +3,6 @@ uvicorn==0.22.0
 sqlalchemy
 pydantic
 python-multipart
-psycopg2-binary==2.9.6
 python-dotenv
 pandas
 openpyxl
@@ -11,3 +10,5 @@ reportlab
 python-jose
 passlib[bcrypt]
 bcrypt==4.0.1
+psycopg2-binary==2.9.9
+psycopg[binary]==3.1.18
