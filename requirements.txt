@@ -1,9 +1,9 @@
 fastapi
-uvicorn
+uvicorn==0.22.0
 sqlalchemy
 pydantic
 python-multipart
-psycopg2-binary
+psycopg2-binary==2.9.6
 python-dotenv
 pandas
 openpyxl
