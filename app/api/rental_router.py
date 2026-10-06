@@ -170,6 +170,8 @@ def rental_offer_auto(
 # --------------------------------------------------
 # SEND MAIL
 # --------------------------------------------------
+# app/api/rental_router.py içindeki @router.post("/send-mail") fonksiyonunu bununla değiştirin:
+
 @router.post("/send-mail")
 def rental_send_mail(
     email: str,
@@ -181,12 +183,50 @@ def rental_send_mail(
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    # 💡 KESİN ÇÖZÜM: Mail atarken sıfırdan hatalı hesaplama yapmak yerine, 
-    # yukarıda girilen manuel fiyatla üretilmiş diskteki hazır PDF dosyasını direkt ekliyoruz.
-    file_path = os.path.join(PDF_DIR, offer.pdf_file)
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=500, detail="Settings tanımlı değil")
 
-    if not os.path.exists(file_path):
-        raise HTTPException(status_code=404, detail="Teklife ait hazır PDF dosyası sunucuda bulunamadı.")
+    # 💡 KESİN ÇÖZÜM: Karmaşık disk kontrolleri yerine, veri tabanındaki doğru aylık kirayı 
+    # baz alarak teklife özel doğru vadeleri sıfırdan kararlı bir şekilde hesaplayıp PDF'i üretiyoruz.
+    base_36_rent = float(offer.monthly_rent)
+    
+    scenarios = [
+        {
+            "months": 24,
+            "monthly_per_machine": round(base_36_rent * (1723.63 / 1332.15), 2),
+            "breakdown": {}
+        },
+        {
+            "months": 36,
+            "monthly_per_machine": round(base_36_rent, 2),
+            "breakdown": {}
+        },
+        {
+            "months": 48,
+            "monthly_per_machine": round(base_36_rent * (1099.47 / 1332.15), 2),
+            "breakdown": {}
+        },
+        {
+            "months": 60,
+            "monthly_per_machine": round(base_36_rent * (992.93 / 1332.15), 2),
+            "breakdown": {}
+        }
+    ]
+
+    # PDF dosyasını Render ortamına uyumlu şekilde oluşturuyoruz
+    file_path = create_rental_offer_pdf(
+        customer=offer.customer,
+        email=email,
+        model=offer.model,
+        machine_count=offer.machine_count,
+        yearly_hours=offer.yearly_hours,
+        survey_score=offer.survey_score,
+        usage_factor=offer.usage_factor,
+        residual_factor=offer.residual_factor,
+        scenarios=scenarios,
+        salesman=current_user.username
+    )
 
     try:
         send_rental_offer_email(email, file_path)
