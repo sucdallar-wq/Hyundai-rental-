@@ -113,7 +113,7 @@ def rental_offer_auto(
             management_fee_monthly=settings.management_fee,
             usage_factor=usage_factor,
             residual_factor=residual_factor,
-            purchase_price=custom_price, # ⭐ Manuel fiyatı döngüye tam entegre ettik
+            purchase_price=custom_price, # ⭐ Manuel fiyatı döngüye dahil ettik
         )
         result = calculate_rental_offer(inputs, db)
         scenarios.append({
@@ -122,13 +122,13 @@ def rental_offer_auto(
             "breakdown": result["breakdown_usd"]
         })
 
-    # 2) 36 Aylık optimum planın indexini dinamik olarak bulalım (Hata payını sıfırlamak için)
-    optimum_monthly_rent = scenarios[1]["monthly_per_machine"] # Varsayılan 36 Ay
+    # 36 Aylık planın güncel aylık kirasını bulalım
+    optimum_monthly_rent = scenarios[1]["monthly_per_machine"]
     for s in scenarios:
         if s["months"] == 36:
             optimum_monthly_rent = s["monthly_per_machine"]
 
-    # 3) PDF oluşturma katmanına tam hesaplanmış senaryo dizisini gönderiyoruz
+    # PDF oluştur
     file_path = create_rental_offer_pdf(
         customer=customer,
         email=email,
@@ -138,12 +138,12 @@ def rental_offer_auto(
         survey_score=survey_score,
         usage_factor=usage_factor,
         residual_factor=residual_factor,
-        scenarios=scenarios, # ⭐ Ekrandaki 20.247 USD'lik diziyi doğrudan gönderdik
+        scenarios=scenarios, # ⭐ Buraya doğru hesaplanmış yeni senaryo listesi gidiyor
         salesman=current_user.username
     )
     file_name = os.path.basename(file_path)
 
-    # 4) Veritabanına kaydet
+    # Veritabanına kaydet
     offer = RentalOffer(
         customer=customer,
         email=email,
@@ -153,7 +153,7 @@ def rental_offer_auto(
         survey_score=survey_score,
         usage_factor=usage_factor,
         residual_factor=residual_factor,
-        monthly_rent=optimum_monthly_rent, # ⭐ Dinamik hesaplanan tutar yazıldı
+        monthly_rent=optimum_monthly_rent, # ⭐ Güncel doğru kira kaydediliyor
         pdf_file=file_name
     )
     db.add(offer)
@@ -180,57 +180,58 @@ def rental_send_mail(
     current_user: User = Depends(get_current_user),
 ):
     from app.services.pdf_service import create_rental_offer_pdf
-    from app.services.survey_service import calculate_usage_factor, calculate_residual_factor
-    from app.services.rental_service import RentalInputs, calculate_rental_offer
 
     offer = db.query(RentalOffer).filter(RentalOffer.id == offer_id).first()
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    settings = db.query(Settings).first()
-    if not settings:
-        raise HTTPException(status_code=500, detail="Settings tanımlı değil")
+    # 💡 KRİTİK DÜZELTME: /send-mail içinde her şeyi sıfırdan hesaplayıp liste fiyatına 
+    # geri dönmek yerine, zaten ilk adımda (/rental-offer-auto) doğru fiyatla üretilmiş 
+    # ve diskte kayıtlı olan hazır PDF dosyasını doğrudan bulup mail eki olarak gönderiyoruz!
+    
+    # PDF klasörünüzün tam yolu
+    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    file_path = os.path.join(BASE_DIR, "pdf", offer.pdf_file)
 
-    scenarios = []
-    for months in [24, 36, 48, 60]:
-        inputs = RentalInputs(
+    # Eğer bir sebepten ötürü dosya diskte bulunamazsa koruma amaçlı yeniden üretilsin (fallback)
+    if not os.path.exists(file_path):
+        settings = db.query(Settings).first()
+        scenarios = []
+        for months in:
+            inputs = RentalInputs(
+                model=offer.model,
+                machine_count=offer.machine_count,
+                yearly_hours=offer.yearly_hours,
+                months=months,
+                interest_rate=settings.interest_rate if settings else 18,
+                insurance_rate=settings.insurance_rate if settings else 2.5,
+                profit_margin=settings.profit_margin if settings else 10,
+                management_fee_monthly=settings.management_fee if settings else 50,
+                usage_factor=offer.usage_factor,
+                residual_factor=offer.residual_factor,
+            )
+            result = calculate_rental_offer(inputs, db)
+            scenarios.append({
+                "months": months,
+                "monthly_per_machine": result["result"]["monthly_rent_per_machine"],
+                "breakdown": result["breakdown_usd"]
+            })
+
+        file_path = create_rental_offer_pdf(
+            customer=offer.customer,
+            email=email,
             model=offer.model,
             machine_count=offer.machine_count,
             yearly_hours=offer.yearly_hours,
-            months=months,
-            interest_rate=settings.interest_rate,
-            insurance_rate=settings.insurance_rate,
-            profit_margin=settings.profit_margin,
-            management_fee_monthly=settings.management_fee,
+            survey_score=offer.survey_score,
             usage_factor=offer.usage_factor,
             residual_factor=offer.residual_factor,
-            # E-posta tekrar gönderilirken de eğer veritabanına purchase_price 
-            # kaydediyorsanız buraya ekleyebilirsiniz. Şimdilik temel akışı koruyoruz.
+            scenarios=scenarios,
+            salesman=current_user.username
         )
-        result = calculate_rental_offer(inputs, db)
-        scenarios.append({
-            "months": months,
-            "monthly_per_machine": result["result"]["monthly_rent_per_machine"],
-            "breakdown": result["breakdown_usd"]
-        })
-
-    file_path = create_rental_offer_pdf(
-        customer=offer.customer,
-        email=email,
-        model=offer.model,
-        machine_count=offer.machine_count,
-        yearly_hours=offer.yearly_hours,
-        survey_score=offer.survey_score,
-        usage_factor=offer.usage_factor,
-        residual_factor=offer.residual_factor,
-        scenarios=scenarios,
-        salesman=current_user.username
-    )
 
     try:
         send_rental_offer_email(email, file_path)
         return {"status": "mail gönderildi"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
