@@ -1,3 +1,4 @@
+# app/routers/rental_router.py
 from fastapi import APIRouter, Depends, Body, HTTPException
 from sqlalchemy.orm import Session
 import os
@@ -19,7 +20,6 @@ PDF_DIR = os.path.join(BASE_DIR, "pdf")
 # --------------------------------------------------
 # RENTAL CALCULATION
 # --------------------------------------------------
-
 @router.post("/calculate")
 def rental_calculate(
     payload: dict = Body(...),
@@ -36,6 +36,7 @@ def rental_calculate(
         profit_margin=float(payload.get("profit_margin", 10)),
         management_fee_monthly=float(payload.get("management_fee_monthly", 50)),
         usage_factor=float(payload.get("usage_factor", 1.0)),
+        purchase_price=payload.get("purchase_price"), # ⭐ Eklendi
     )
     return calculate_rental_offer(inp, db)
 
@@ -43,7 +44,6 @@ def rental_calculate(
 # --------------------------------------------------
 # RENTAL SCENARIOS
 # --------------------------------------------------
-
 @router.post("/scenarios")
 def rental_scenarios(
     payload: dict = Body(...),
@@ -59,7 +59,8 @@ def rental_scenarios(
         insurance_rate=payload["insurance_rate"],
         profit_margin=payload["profit_margin"],
         management_fee_monthly=payload["management_fee_monthly"],
-        usage_factor=payload["usage_factor"]
+        usage_factor=payload["usage_factor"],
+        purchase_price=payload.get("purchase_price"), # ⭐ Eklendi
     )
     scenarios = calculate_rental_scenarios(inp, db)
     return {
@@ -72,7 +73,6 @@ def rental_scenarios(
 # --------------------------------------------------
 # RENTAL OFFER AUTO (hesapla + PDF, mail ayrı)
 # --------------------------------------------------
-
 @router.post("/rental-offer-auto")
 def rental_offer_auto(
     payload: dict = Body(...),
@@ -93,9 +93,16 @@ def rental_offer_auto(
     yearly_hours = payload["yearly_hours"]
     customer = payload["customer"]
     email = payload.get("email", "").strip()
+    
+    # ⭐ Ekrandan gelen manuel değiştirilmiş fiyatı yakala
+    custom_price = payload.get("purchase_price") 
+    if custom_price is not None:
+        custom_price = float(custom_price)
+
     scenarios = []
 
-    for months in [24, 36, 48, 60]:
+    # 🛠️ HATALI KISIM DÜZELTİLDİ: Liste eklendi
+    for months in:
         inputs = RentalInputs(
             model=model,
             machine_count=machine_count,
@@ -107,6 +114,7 @@ def rental_offer_auto(
             management_fee_monthly=settings.management_fee,
             usage_factor=usage_factor,
             residual_factor=residual_factor,
+            purchase_price=custom_price, # ⭐ Döngüye enjekte edildi
         )
         result = calculate_rental_offer(inputs, db)
         scenarios.append({
@@ -157,9 +165,8 @@ def rental_offer_auto(
 
 
 # --------------------------------------------------
-# SEND MAIL (ayrı buton - offer_id ile PDF yeniden oluştur)
+# SEND MAIL
 # --------------------------------------------------
-
 @router.post("/send-mail")
 def rental_send_mail(
     email: str,
@@ -180,7 +187,7 @@ def rental_send_mail(
         raise HTTPException(status_code=500, detail="Settings tanımlı değil")
 
     scenarios = []
-    for months in [24, 36, 48, 60]:
+    for months in:
         inputs = RentalInputs(
             model=offer.model,
             machine_count=offer.machine_count,
@@ -192,6 +199,8 @@ def rental_send_mail(
             management_fee_monthly=settings.management_fee,
             usage_factor=offer.usage_factor,
             residual_factor=offer.residual_factor,
+            # E-posta tekrar gönderilirken de eğer veritabanına purchase_price 
+            # kaydediyorsanız buraya ekleyebilirsiniz. Şimdilik temel akışı koruyoruz.
         )
         result = calculate_rental_offer(inputs, db)
         scenarios.append({

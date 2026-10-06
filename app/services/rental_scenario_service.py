@@ -1,16 +1,13 @@
-from app.services.rental_service import calculate_rental_offer
+# app/services/rental_scenario_service.py
+from app.services.rental_service import RentalInputs, calculate_rental_offer
+from sqlalchemy.orm import Session
 
-
-def calculate_rental_scenarios(inputs, db):
-
+def calculate_rental_scenarios(inputs: RentalInputs, db: Session):
     scenarios = [24, 36, 48, 60]
-
     results = []
 
     for m in scenarios:
-
         inputs.months = m
-
         result = calculate_rental_offer(inputs, db)
 
         results.append({

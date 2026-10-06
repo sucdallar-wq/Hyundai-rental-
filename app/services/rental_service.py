@@ -71,6 +71,10 @@ class RentalInputs:
     usage_factor: float            # 1.0 / 1.1 / 1.2
     residual_factor: Optional[float] = None  # verilmezse otomatik
 
+    # ⭐ BURAYI AYNEN EKLEYİN (Varsayılan olarak None olmalıdır)
+    purchase_price: Optional[float] = None 
+
+
 
 def calculate_rental_offer(inp: RentalInputs, db: Session) -> Dict[str, Any]:
     """
@@ -88,20 +92,24 @@ def calculate_rental_offer(inp: RentalInputs, db: Session) -> Dict[str, Any]:
     = Aylık kira (toplam + makine başı)
     """
 
+    
+    # 1) Makine fiyatını belirle
     # -----------------------------
-    # 1) Makine fiyatını DB’den çek
-    # -----------------------------
-    # Sizin Machine'de alanlar: name/type/price_usd idi.
-    # model parametresi "30DN-9V" gibi görünüyor.
-    machine = (
-        db.query(Machine)
-        .filter(Machine.model_code == inp.model)  # sizde type alanı model kodu gibi dönüyor
-        .first()
-    )
-    if not machine:
-        raise ValueError(f"Makine bulunamadı: {inp.model}")
+    # ⭐ Öncelik Ekrandan (Arayüzden) Gelen Manuel Değiştirilmiş Fiyattadır:
+    if inp.purchase_price is not None and inp.purchase_price > 0:
+        unit_price = float(inp.purchase_price)
+    else:
+        # Eğer ekrandan fiyat gönderilmediyse (veya 0 ise) Excel/DB'deki temel fiyatı koru
+        machine = (
+            db.query(Machine)
+            .filter(Machine.model_code == inp.model)
+            .first()
+        )
+        if not machine:
+            raise ValueError(f"Makine bulunamadı: {inp.model}")
+        unit_price = float(machine.price_usd or 0)
 
-    unit_price = float(machine.price_usd or 0)
+    # Toplam maliyet hesaplaması, seçilen (manuel veya temel) birim fiyata göre yürütülür
     machine_price_total = unit_price * inp.machine_count
 
     # -----------------------------
