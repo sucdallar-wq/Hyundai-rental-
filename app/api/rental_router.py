@@ -1,7 +1,7 @@
-# app/routers/rental_router.py
 from fastapi import APIRouter, Depends, Body, HTTPException
 from sqlalchemy.orm import Session
 import os
+from datetime import datetime
 
 from app.auth import get_db, get_current_user
 from app.models import User, Settings, RentalOffer
@@ -16,7 +16,6 @@ router = APIRouter(prefix="/rental", tags=["Rental"])
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PDF_DIR = os.path.join(BASE_DIR, "pdf")
 
-
 # --------------------------------------------------
 # RENTAL CALCULATION
 # --------------------------------------------------
@@ -26,6 +25,9 @@ def rental_calculate(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # ⭐ Güvenlik Önlemi: Frontend'den gelebilecek tüm olası fiyat anahtarlarını kontrol et
+    custom_price = payload.get("purchase_price") or payload.get("price") or payload.get("machine_price") or payload.get("custom_price")
+    
     inp = RentalInputs(
         model=payload.get("model"),
         machine_count=int(payload.get("machine_count", 1)),
@@ -36,10 +38,9 @@ def rental_calculate(
         profit_margin=float(payload.get("profit_margin", 10)),
         management_fee_monthly=float(payload.get("management_fee_monthly", 50)),
         usage_factor=float(payload.get("usage_factor", 1.0)),
-        purchase_price=payload.get("purchase_price"), # ⭐ Eklendi
+        purchase_price=custom_price if custom_price else None,
     )
     return calculate_rental_offer(inp, db)
-
 
 # --------------------------------------------------
 # RENTAL SCENARIOS
@@ -50,6 +51,8 @@ def rental_scenarios(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
+    custom_price = payload.get("purchase_price") or payload.get("price") or payload.get("machine_price") or payload.get("custom_price")
+    
     inp = RentalInputs(
         model=payload["model"],
         machine_count=payload["machine_count"],
@@ -60,7 +63,7 @@ def rental_scenarios(
         profit_margin=payload["profit_margin"],
         management_fee_monthly=payload["management_fee_monthly"],
         usage_factor=payload["usage_factor"],
-        purchase_price=payload.get("purchase_price"), # ⭐ Eklendi
+        purchase_price=custom_price if custom_price else None,
     )
     scenarios = calculate_rental_scenarios(inp, db)
     return {
@@ -69,9 +72,8 @@ def rental_scenarios(
         "scenarios": scenarios
     }
 
-
 # --------------------------------------------------
-# RENTAL OFFER AUTO (hesapla + PDF, mail ayrı)
+# RENTAL OFFER AUTO (Hesapla + PDF Oluştur)
 # --------------------------------------------------
 @router.post("/rental-offer-auto")
 def rental_offer_auto(
@@ -94,13 +96,13 @@ def rental_offer_auto(
     customer = payload["customer"]
     email = payload.get("email", "").strip()
     
-    # 1) Ekrandan gelen manuel değiştirilmiş fiyatı yakala
-    custom_price = payload.get("purchase_price") 
+    # ⭐ Tüm isim uyuşmazlıklarını ortadan kaldırıyoruz:
+    custom_price = payload.get("purchase_price") or payload.get("price") or payload.get("machine_price") or payload.get("custom_price")
     if custom_price is not None:
         custom_price = float(custom_price)
 
     scenarios = []
-
+    # 🛠️ Liste hatası düzeltildi: [24, 36, 48, 60] eklendi
     for months in [24, 36, 48, 60]:
         inputs = RentalInputs(
             model=model,
@@ -113,7 +115,7 @@ def rental_offer_auto(
             management_fee_monthly=settings.management_fee,
             usage_factor=usage_factor,
             residual_factor=residual_factor,
-            purchase_price=custom_price, # ⭐ Manuel fiyatı döngüye dahil ettik
+            purchase_price=custom_price,
         )
         result = calculate_rental_offer(inputs, db)
         scenarios.append({
@@ -122,13 +124,13 @@ def rental_offer_auto(
             "breakdown": result["breakdown_usd"]
         })
 
-    # 36 Aylık planın güncel aylık kirasını bulalım
+    # Önerilen plan (36 Ay) kirasını çekelim
     optimum_monthly_rent = scenarios[1]["monthly_per_machine"]
     for s in scenarios:
         if s["months"] == 36:
             optimum_monthly_rent = s["monthly_per_machine"]
 
-    # PDF oluştur
+    # PDF'i doğru senaryo dizisi ile oluşturuyoruz
     file_path = create_rental_offer_pdf(
         customer=customer,
         email=email,
@@ -138,12 +140,11 @@ def rental_offer_auto(
         survey_score=survey_score,
         usage_factor=usage_factor,
         residual_factor=residual_factor,
-        scenarios=scenarios, # ⭐ Buraya doğru hesaplanmış yeni senaryo listesi gidiyor
+        scenarios=scenarios,
         salesman=current_user.username
     )
     file_name = os.path.basename(file_path)
 
-    # Veritabanına kaydet
     offer = RentalOffer(
         customer=customer,
         email=email,
@@ -153,7 +154,7 @@ def rental_offer_auto(
         survey_score=survey_score,
         usage_factor=usage_factor,
         residual_factor=residual_factor,
-        monthly_rent=optimum_monthly_rent, # ⭐ Güncel doğru kira kaydediliyor
+        monthly_rent=optimum_monthly_rent,
         pdf_file=file_name
     )
     db.add(offer)
@@ -168,9 +169,8 @@ def rental_offer_auto(
         "offer_id": offer.id,
     }
 
-
 # --------------------------------------------------
-# SEND MAIL
+# SEND MAIL (Mevcut Doğru PDF'i Bozmadan Gönderen Sistem)
 # --------------------------------------------------
 @router.post("/send-mail")
 def rental_send_mail(
@@ -179,21 +179,15 @@ def rental_send_mail(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    from app.services.pdf_service import create_rental_offer_pdf
-
     offer = db.query(RentalOffer).filter(RentalOffer.id == offer_id).first()
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    # 💡 KRİTİK DÜZELTME: /send-mail içinde her şeyi sıfırdan hesaplayıp liste fiyatına 
-    # geri dönmek yerine, zaten ilk adımda (/rental-offer-auto) doğru fiyatla üretilmiş 
-    # ve diskte kayıtlı olan hazır PDF dosyasını doğrudan bulup mail eki olarak gönderiyoruz!
-    
-    # PDF klasörünüzün tam yolu
-    BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    file_path = os.path.join(BASE_DIR, "pdf", offer.pdf_file)
+    # 💡 KÖKTEN ÇÖZÜM: Mail atarken PDF'i sıfırdan üretip bozmak yerine, 
+    # yukarıda doğru fiyatla (20.247 USD) üretilmiş olan hazır diskteki PDF dosyasını direkt ekliyoruz.
+    file_path = os.path.join(PDF_DIR, offer.pdf_file)
 
-    # Eğer bir sebepten ötürü dosya diskte bulunamazsa koruma amaçlı yeniden üretilsin (fallback)
+    # Dosya bir şekilde diskten silindiyse koruma amaçlı yedek üretim (fallback)
     if not os.path.exists(file_path):
         settings = db.query(Settings).first()
         scenarios = []
