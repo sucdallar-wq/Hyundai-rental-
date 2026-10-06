@@ -102,7 +102,7 @@ def rental_offer_auto(
     scenarios = []
 
     # 🛠️ HATALI KISIM DÜZELTİLDİ: Liste eklendi
-    for months in:
+    for months in (24, 36, 48, 60):
         inputs = RentalInputs(
             model=model,
             machine_count=machine_count,
@@ -187,7 +187,7 @@ def rental_send_mail(
         raise HTTPException(status_code=500, detail="Settings tanımlı değil")
 
     scenarios = []
-    for months in:
+    for months in (24, 36, 48, 60):
         inputs = RentalInputs(
             model=offer.model,
             machine_count=offer.machine_count,
