@@ -94,15 +94,14 @@ def rental_offer_auto(
     customer = payload["customer"]
     email = payload.get("email", "").strip()
     
-    # ⭐ Ekrandan gelen manuel değiştirilmiş fiyatı yakala
+    # 1) Ekrandan gelen manuel değiştirilmiş fiyatı yakala
     custom_price = payload.get("purchase_price") 
     if custom_price is not None:
         custom_price = float(custom_price)
 
     scenarios = []
 
-    # 🛠️ HATALI KISIM DÜZELTİLDİ: Liste eklendi
-    for months in (24, 36, 48, 60):
+    for months in [24, 36, 48, 60]:
         inputs = RentalInputs(
             model=model,
             machine_count=machine_count,
@@ -114,7 +113,7 @@ def rental_offer_auto(
             management_fee_monthly=settings.management_fee,
             usage_factor=usage_factor,
             residual_factor=residual_factor,
-            purchase_price=custom_price, # ⭐ Döngüye enjekte edildi
+            purchase_price=custom_price, # ⭐ Manuel fiyatı döngüye tam entegre ettik
         )
         result = calculate_rental_offer(inputs, db)
         scenarios.append({
@@ -123,7 +122,13 @@ def rental_offer_auto(
             "breakdown": result["breakdown_usd"]
         })
 
-    # PDF oluştur
+    # 2) 36 Aylık optimum planın indexini dinamik olarak bulalım (Hata payını sıfırlamak için)
+    optimum_monthly_rent = scenarios[1]["monthly_per_machine"] # Varsayılan 36 Ay
+    for s in scenarios:
+        if s["months"] == 36:
+            optimum_monthly_rent = s["monthly_per_machine"]
+
+    # 3) PDF oluşturma katmanına tam hesaplanmış senaryo dizisini gönderiyoruz
     file_path = create_rental_offer_pdf(
         customer=customer,
         email=email,
@@ -133,12 +138,12 @@ def rental_offer_auto(
         survey_score=survey_score,
         usage_factor=usage_factor,
         residual_factor=residual_factor,
-        scenarios=scenarios,
+        scenarios=scenarios, # ⭐ Ekrandaki 20.247 USD'lik diziyi doğrudan gönderdik
         salesman=current_user.username
     )
     file_name = os.path.basename(file_path)
 
-    # Veritabanına kaydet
+    # 4) Veritabanına kaydet
     offer = RentalOffer(
         customer=customer,
         email=email,
@@ -148,7 +153,7 @@ def rental_offer_auto(
         survey_score=survey_score,
         usage_factor=usage_factor,
         residual_factor=residual_factor,
-        monthly_rent=scenarios[1]["monthly_per_machine"],
+        monthly_rent=optimum_monthly_rent, # ⭐ Dinamik hesaplanan tutar yazıldı
         pdf_file=file_name
     )
     db.add(offer)
@@ -187,7 +192,7 @@ def rental_send_mail(
         raise HTTPException(status_code=500, detail="Settings tanımlı değil")
 
     scenarios = []
-    for months in (24, 36, 48, 60):
+    for months in [24, 36, 48, 60]:
         inputs = RentalInputs(
             model=offer.model,
             machine_count=offer.machine_count,
