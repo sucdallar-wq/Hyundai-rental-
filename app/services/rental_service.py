@@ -191,11 +191,14 @@ def calculate_rental_offer(inp: RentalInputs, db: Session) -> Dict[str, Any]:
     )
 
     # -----------------------------
+        # -----------------------------
+        # -----------------------------
     # 9) Finansman:
-    # Basit model: base_cost * interest_rate%
-    # (İsterseniz bunu daha sonra IRR/PMT’ye çevirebiliriz)
+    # 🛠️ HATA DÜZELTİLDİ: Faiz yükü vade süresine (yıllık kritere) göre oransal hale getirildi
     # -----------------------------
-    finance_cost = base_cost * (inp.interest_rate / 100.0)
+    finance_cost = base_cost * (inp.interest_rate / 100.0) * (inp.months / 12.0)
+
+
 
     # -----------------------------
     # 10) Yönetim gideri:

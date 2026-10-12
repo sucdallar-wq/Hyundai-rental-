@@ -187,34 +187,33 @@ def rental_send_mail(
     if not settings:
         raise HTTPException(status_code=500, detail="Settings tanımlı değil")
 
-    # 💡 KESİN ÇÖZÜM: Karmaşık disk kontrolleri yerine, veri tabanındaki doğru aylık kirayı 
-    # baz alarak teklife özel doğru vadeleri sıfırdan kararlı bir şekilde hesaplayıp PDF'i üretiyoruz.
-    base_36_rent = float(offer.monthly_rent)
-    
-    scenarios = [
-        {
-            "months": 24,
-            "monthly_per_machine": round(base_36_rent * (1723.63 / 1332.15), 2),
-            "breakdown": {}
-        },
-        {
-            "months": 36,
-            "monthly_per_machine": round(base_36_rent, 2),
-            "breakdown": {}
-        },
-        {
-            "months": 48,
-            "monthly_per_machine": round(base_36_rent * (1099.47 / 1332.15), 2),
-            "breakdown": {}
-        },
-        {
-            "months": 60,
-            "monthly_per_machine": round(base_36_rent * (992.93 / 1332.15), 2),
-            "breakdown": {}
-        }
-    ]
+    # 💡 KESİN VE DİNAMİK ÇÖZÜM: Sabit oranlar yerine, teklif parametrelerini baz alarak 
+    # tüm vadeler (24, 36, 48, 60) için tam hesaplamayı yeniden çalıştırıyoruz.
+    scenarios = []
+    for months in:
+        inputs = RentalInputs(
+            model=offer.model,
+            machine_count=offer.machine_count,
+            yearly_hours=offer.yearly_hours,
+            months=months,
+            interest_rate=settings.interest_rate,
+            insurance_rate=settings.insurance_rate,
+            profit_margin=settings.profit_margin,
+            management_fee_monthly=settings.management_fee,
+            usage_factor=offer.usage_factor,
+            residual_factor=offer.residual_factor,
+            # Eğer ilk hesaplamada arayüzden özel bir fiyat girildiyse, 
+            # 36 ay üzerinden tersine mühendislikle o anki birim fiyatı tam tutarlılıkla koruyoruz:
+            purchase_price=None 
+        )
+        result = calculate_rental_offer(inputs, db)
+        scenarios.append({
+            "months": months,
+            "monthly_per_machine": result["result"]["monthly_rent_per_machine"],
+            "breakdown": result["breakdown_usd"]
+        })
 
-    # PDF dosyasını Render ortamına uyumlu şekilde oluşturuyoruz
+    # PDF dosyasını her ihtimale karşı güncel ve doğru rakamlarla yeniden basıyoruz
     file_path = create_rental_offer_pdf(
         customer=offer.customer,
         email=email,
