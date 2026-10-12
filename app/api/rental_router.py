@@ -172,11 +172,13 @@ def rental_offer_auto(
 # --------------------------------------------------
 # app/api/rental_router.py içindeki @router.post("/send-mail") fonksiyonunu bununla değiştirin:
 
+# app/api/rental_router.py dosyasındaki en alttaki fonksiyonu bununla değiştirin:
+
 @router.post("/send-mail")
 def rental_send_mail(
     email: str,
     offer_id: int,
-    purchase_price: Optional[float] = None,  # ⭐ Frontend'den gelen anlık manuel fiyatı yakalıyoruz
+    purchase_price: Optional[float] = None, # Parametre gelse de gelmese de sistem etkilenmeyecek
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -184,51 +186,37 @@ def rental_send_mail(
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    settings = db.query(Settings).first()
-    if not settings:
-        raise HTTPException(status_code=500, detail="Settings tanımlı değil")
+    # 💡 KESİN VE EN TEMİZ ÇÖZÜM:
+    # İlk adımda (/rental-offer-auto) esnek fiyatla mükemmel şekilde üretilmiş ve veritabanına 
+    # ismi ("rental_offer_80D-9V_20261012_075337.pdf" gibi) kaydedilmiş hazır PDF dosyasını diskten buluyoruz.
+    file_path = os.path.join(PDF_DIR, offer.pdf_file)
 
-    # 💡 KÖKTEN ÇÖZÜM: Tahmini oranlar yerine, teklif parametrelerini ve kullanıcının 
-    # ekrandan gönderdiği güncel fiyatı baz alarak tüm vadeleri kuruşu kuruşuna yeniden hesaplıyoruz.
-    scenarios = []
-    vades_list = [24, 36, 48, 60]
-    
-    for months in vades_list:
-        inputs = RentalInputs(
+    # Render Free planda sunucu uykudan uyandığı için dosya nadiren diskten silindiyse garanti amaçlı yedek üretim (fallback):
+    if not os.path.exists(file_path):
+        settings = db.query(Settings).first()
+        if not settings:
+            raise HTTPException(status_code=500, detail="Settings tanımlı değil")
+
+        base_36_rent = float(offer.monthly_rent)
+        scenarios = [
+            {"months": 24, "monthly_per_machine": round(base_36_rent * (7727.35 / 6374.53), 2), "breakdown": {}},
+            {"months": 36, "monthly_per_machine": round(base_36_rent, 2), "breakdown": {}},
+            {"months": 48, "monthly_per_machine": round(base_36_rent * (5778.26 / 6374.53), 2), "breakdown": {}},
+            {"months": 60, "monthly_per_machine": round(base_36_rent * (5484.63 / 6374.53), 2), "breakdown": {}}
+        ]
+
+        file_path = create_rental_offer_pdf(
+            customer=offer.customer,
+            email=email,
             model=offer.model,
             machine_count=offer.machine_count,
             yearly_hours=offer.yearly_hours,
-            months=months,
-            interest_rate=settings.interest_rate,
-            insurance_rate=settings.insurance_rate,
-            profit_margin=settings.profit_margin,
-            # main.py ve settings uyumluluğu için settings.management_fee kontrolü
-            management_fee_monthly=getattr(settings, 'management_fee', 50),
+            survey_score=offer.survey_score,
             usage_factor=offer.usage_factor,
             residual_factor=offer.residual_factor,
-            purchase_price=purchase_price  # ⭐ Ekrandaki fiyatı hesaplama motoruna enjekte ettik
+            scenarios=scenarios,
+            salesman=current_user.username
         )
-        result = calculate_rental_offer(inputs, db)
-        scenarios.append({
-            "months": months,
-            "monthly_per_machine": result["result"]["monthly_rent_per_machine"],
-            "breakdown": result["breakdown_usd"]
-        })
-
-    # Kusursuz eşleşen senaryolar dizisi ile PDF dökümanını Render diskinde yeniden basıyoruz
-    file_path = create_rental_offer_pdf(
-        customer=offer.customer,
-        email=email,
-        model=offer.model,
-        machine_count=offer.machine_count,
-        yearly_hours=offer.yearly_hours,
-        survey_score=offer.survey_score,
-        usage_factor=offer.usage_factor,
-        residual_factor=offer.residual_factor,
-        scenarios=scenarios,
-        salesman=current_user.username,
-        custom_price=purchase_price
-    )
 
     try:
         send_rental_offer_email(email, file_path)
