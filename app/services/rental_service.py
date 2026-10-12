@@ -26,18 +26,33 @@ def residual_factor_from_usage(usage_factor: float) -> float:
         return 0.95
     return 0.90
 
-def residual_rate_from_hours(total_hours: float) -> float:
+def calculate_base_residual_rate(yearly_hours: int, months: int) -> float:
+    """
+    Müşterinin matris tablosuna göre taban kalıntı değer oranını belirler.
+    Tüm ara değerler mantıksal aralıklara otomatik yerleştirilir.
+    """
+    # 1) Yıllık saat kademesini belirle (Satır Seçimi)
+    if yearly_hours <= 1500:
+        # Satır 1: <=1500 saat arası kullanım
+        if months <= 24: return 0.40
+        elif months <= 36: return 0.35
+        elif months <= 48: return 0.30
+        else: return 0.25  # 60 Ay
 
-    if total_hours <= 2000:
-        return 0.35
-    elif total_hours <= 4000:
-        return 0.30
-    elif total_hours <= 6000:
-        return 0.25
-    elif total_hours <= 9000:
-        return 0.20
+    elif yearly_hours <= 3000:
+        # Satır 2: 1501 - 3000 saat arası kullanım
+        if months <= 24: return 0.35
+        elif months <= 36: return 0.30
+        elif months <= 48: return 0.25
+        else: return 0.20  # 60 Ay
+
     else:
-        return 0.15
+        # Satır 3: 3000 saatin üzerindeki tüm yoğun kullanımlar (>5000 dahil)
+        if months <= 24: return 0.30
+        elif months <= 36: return 0.25
+        elif months <= 48: return 0.20
+        else: return 0.15  # 60 Ay
+
 
 # -----------------------------
 # Yardımcı: saat bazlı bakım paketi seçimi
@@ -162,8 +177,8 @@ def calculate_rental_offer(inp: RentalInputs, db: Session) -> Dict[str, Any]:
     tire_cost_total = tire_cost * inp.machine_count
 
     # -----------------------------
-    # 6) Residual (2.el) değeri:saat ve survey etkili 
-    base_residual_rate = residual_rate_from_hours(total_hours)
+    # 🛠️ Yeni matris tablosuna endeksli dinamik çağrı:
+    base_residual_rate = calculate_base_residual_rate(inp.yearly_hours, inp.months)
 
     residual_factor = residual_factor_from_usage(usage_factor)
 
