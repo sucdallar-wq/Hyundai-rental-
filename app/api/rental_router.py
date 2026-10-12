@@ -200,12 +200,14 @@ def rental_send_mail(
         base_36_rent = float(offer.monthly_rent)
         
         # Orijinal oranlama modeline göre vadeleri koruyoruz:
+                # Yeni Finansal ve Ağır Yoğunluk Formülüne Tam Uyumlu Gerçek Oranlar:
         scenarios = [
             {"months": 24, "monthly_per_machine": round(base_36_rent * (7952.47 / 6538.53), 2), "breakdown": {}},
             {"months": 36, "monthly_per_machine": round(base_36_rent, 2), "breakdown": {}},
             {"months": 48, "monthly_per_machine": round(base_36_rent * (5912.11 / 6538.53), 2), "breakdown": {}},
             {"months": 60, "monthly_per_machine": round(base_36_rent * (5600.69 / 6538.53), 2), "breakdown": {}}
         ]
+
 
         # Teklif oluşturulurken veritabanındaki orijinal usage_factor (Örn: 1.2 Ağır) değerini birebir iletiyoruz
         file_path = create_rental_offer_pdf(
