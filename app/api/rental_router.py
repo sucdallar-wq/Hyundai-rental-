@@ -190,7 +190,7 @@ def rental_send_mail(
     # 💡 KESİN VE DİNAMİK ÇÖZÜM: Sabit oranlar yerine, teklif parametrelerini baz alarak 
     # tüm vadeler (24, 36, 48, 60) için tam hesaplamayı yeniden çalıştırıyoruz.
     scenarios = []
-    for months in:
+    for months in [24, 36, 48, 60]:
         inputs = RentalInputs(
             model=offer.model,
             machine_count=offer.machine_count,
