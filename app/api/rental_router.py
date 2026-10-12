@@ -176,6 +176,7 @@ def rental_offer_auto(
 def rental_send_mail(
     email: str,
     offer_id: int,
+    purchase_price: Optional[float] = None,  # ⭐ Frontend'den gelen anlık manuel fiyatı yakalıyoruz
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -187,10 +188,12 @@ def rental_send_mail(
     if not settings:
         raise HTTPException(status_code=500, detail="Settings tanımlı değil")
 
-    # 💡 KESİN VE DİNAMİK ÇÖZÜM: Sabit oranlar yerine, teklif parametrelerini baz alarak 
-    # tüm vadeler (24, 36, 48, 60) için tam hesaplamayı yeniden çalıştırıyoruz.
+    # 💡 KÖKTEN ÇÖZÜM: Tahmini oranlar yerine, teklif parametrelerini ve kullanıcının 
+    # ekrandan gönderdiği güncel fiyatı baz alarak tüm vadeleri kuruşu kuruşuna yeniden hesaplıyoruz.
     scenarios = []
-    for months in [24, 36, 48, 60]:
+    vades_list = [24, 36, 48, 60]
+    
+    for months in vades_list:
         inputs = RentalInputs(
             model=offer.model,
             machine_count=offer.machine_count,
@@ -199,12 +202,11 @@ def rental_send_mail(
             interest_rate=settings.interest_rate,
             insurance_rate=settings.insurance_rate,
             profit_margin=settings.profit_margin,
-            management_fee_monthly=settings.management_fee,
+            # main.py ve settings uyumluluğu için settings.management_fee kontrolü
+            management_fee_monthly=getattr(settings, 'management_fee', 50),
             usage_factor=offer.usage_factor,
             residual_factor=offer.residual_factor,
-            # Eğer ilk hesaplamada arayüzden özel bir fiyat girildiyse, 
-            # 36 ay üzerinden tersine mühendislikle o anki birim fiyatı tam tutarlılıkla koruyoruz:
-            purchase_price=None 
+            purchase_price=purchase_price  # ⭐ Ekrandaki fiyatı hesaplama motoruna enjekte ettik
         )
         result = calculate_rental_offer(inputs, db)
         scenarios.append({
@@ -213,7 +215,7 @@ def rental_send_mail(
             "breakdown": result["breakdown_usd"]
         })
 
-    # PDF dosyasını her ihtimale karşı güncel ve doğru rakamlarla yeniden basıyoruz
+    # Kusursuz eşleşen senaryolar dizisi ile PDF dökümanını Render diskinde yeniden basıyoruz
     file_path = create_rental_offer_pdf(
         customer=offer.customer,
         email=email,
@@ -224,7 +226,8 @@ def rental_send_mail(
         usage_factor=offer.usage_factor,
         residual_factor=offer.residual_factor,
         scenarios=scenarios,
-        salesman=current_user.username
+        salesman=current_user.username,
+        custom_price=purchase_price
     )
 
     try:
