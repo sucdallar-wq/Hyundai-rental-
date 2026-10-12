@@ -174,54 +174,65 @@ def rental_offer_auto(
 
 # app/api/rental_router.py dosyasındaki en alttaki fonksiyonu bununla değiştirin:
 
+# app/api/rental_router.py dosyasındaki en alttaki fonksiyonu bununla değiştirin:
+
 @router.post("/send-mail")
 def rental_send_mail(
     email: str,
     offer_id: int,
+    purchase_price: Optional[float] = None,  # ⭐ Frontend'den gelen anlık esnek fiyatı yakalıyoruz
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    # 1) Veritabanından teklif kaydını oku
     offer = db.query(RentalOffer).filter(RentalOffer.id == offer_id).first()
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    # 💡 KÖKTEN ÇÖZÜM: Mail atarken sıfırdan hesaplama yapıp katsayıları (Ağır/Orta) karıştırmak yerine,
-    # /rental-offer-auto adımında kusursuzca üretilmiş ve veritabanına ismi kaydedilmiş hazır PDF'i diskten yakalıyoruz.
-    file_path = os.path.join(PDF_DIR, offer.pdf_file)
+    settings = db.query(Settings).first()
+    if not settings:
+        raise HTTPException(status_code=500, detail="Settings tanımlı değil")
 
-    # Sunucu uykudan uyandığı için nadiren dosya silindiyse, veritabanındaki orijinal katsayılarla (Ağır ise Ağır) birebir yeniden üret:
-    if not os.path.exists(file_path):
-        settings = db.query(Settings).first()
-        if not settings:
-            raise HTTPException(status_code=500, detail="Settings tanımlı değil")
-
-        # Veritabanına kaydedilen doğru kirayı baz alarak vadelere doğru katsayı çarpanlarını dağıtıyoruz
-        base_36_rent = float(offer.monthly_rent)
-        
-        # Orijinal oranlama modeline göre vadeleri koruyoruz:
-                # Yeni Finansal ve Ağır Yoğunluk Formülüne Tam Uyumlu Gerçek Oranlar:
-        scenarios = [
-            {"months": 24, "monthly_per_machine": round(base_36_rent * (7952.47 / 6538.53), 2), "breakdown": {}},
-            {"months": 36, "monthly_per_machine": round(base_36_rent, 2), "breakdown": {}},
-            {"months": 48, "monthly_per_machine": round(base_36_rent * (5912.11 / 6538.53), 2), "breakdown": {}},
-            {"months": 60, "monthly_per_machine": round(base_36_rent * (5600.69 / 6538.53), 2), "breakdown": {}}
-        ]
-
-
-        # Teklif oluşturulurken veritabanındaki orijinal usage_factor (Örn: 1.2 Ağır) değerini birebir iletiyoruz
-        file_path = create_rental_offer_pdf(
-            customer=offer.customer,
-            email=email,
+    # 💡 KESİN VE KURUŞU KURUŞUNA EŞLEŞEN ÇÖZÜM:
+    # Sabit tahmini oranları tamamen çöpe atıyoruz. Resmi kiralama hesaplama fonksiyonunu 
+    # 24, 36, 48 ve 60 ay vadelerinin tamamı için canlı fiyatı da dahil ederek sıfırdan koşturuyoruz!
+    scenarios = []
+    vades_list = [24, 36, 48, 60]  # ⭐ Markdown hatasını engellemek için liste açıkça tanımlandı
+    
+    for months in vades_list:
+        inputs = RentalInputs(
             model=offer.model,
             machine_count=offer.machine_count,
             yearly_hours=offer.yearly_hours,
-            survey_score=offer.survey_score,
-            usage_factor=offer.usage_factor, # ⭐ Veritabanındaki orijinal katsayı
+            months=months,
+            interest_rate=settings.interest_rate,
+            insurance_rate=settings.insurance_rate,
+            profit_margin=settings.profit_margin,
+            management_fee_monthly=getattr(settings, 'management_fee', 50),
+            usage_factor=offer.usage_factor,
             residual_factor=offer.residual_factor,
-            scenarios=scenarios,
-            salesman=current_user.username
+            purchase_price=purchase_price  # ⭐ Ekrandaki fiyatı hesaplama motoruna enjekte ettik
         )
+        result = calculate_rental_offer(inputs, db)
+        scenarios.append({
+            "months": months,
+            "monthly_per_machine": result["result"]["monthly_rent_per_machine"],
+            "breakdown": result["breakdown_usd"]
+        })
+
+    # Tamamen ekrandakiyle kuruşu kuruşuna eşleşen bu dinamik diziyle PDF dökümanını sıfırdan basıyoruz
+    file_path = create_rental_offer_pdf(
+        customer=offer.customer,
+        email=email,
+        model=offer.model,
+        machine_count=offer.machine_count,
+        yearly_hours=offer.yearly_hours,
+        survey_score=offer.survey_score,
+        usage_factor=offer.usage_factor,
+        residual_factor=offer.residual_factor,
+        scenarios=scenarios,
+        salesman=current_user.username,
+        custom_price=purchase_price
+    )
 
     try:
         send_rental_offer_email(email, file_path)
