@@ -178,33 +178,36 @@ def rental_offer_auto(
 def rental_send_mail(
     email: str,
     offer_id: int,
-    purchase_price: Optional[float] = None, # Parametre gelse de gelmese de sistem etkilenmeyecek
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    # 1) Veritabanından teklif kaydını oku
     offer = db.query(RentalOffer).filter(RentalOffer.id == offer_id).first()
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    # 💡 KESİN VE EN TEMİZ ÇÖZÜM:
-    # İlk adımda (/rental-offer-auto) esnek fiyatla mükemmel şekilde üretilmiş ve veritabanına 
-    # ismi ("rental_offer_80D-9V_20261012_075337.pdf" gibi) kaydedilmiş hazır PDF dosyasını diskten buluyoruz.
+    # 💡 KÖKTEN ÇÖZÜM: Mail atarken sıfırdan hesaplama yapıp katsayıları (Ağır/Orta) karıştırmak yerine,
+    # /rental-offer-auto adımında kusursuzca üretilmiş ve veritabanına ismi kaydedilmiş hazır PDF'i diskten yakalıyoruz.
     file_path = os.path.join(PDF_DIR, offer.pdf_file)
 
-    # Render Free planda sunucu uykudan uyandığı için dosya nadiren diskten silindiyse garanti amaçlı yedek üretim (fallback):
+    # Sunucu uykudan uyandığı için nadiren dosya silindiyse, veritabanındaki orijinal katsayılarla (Ağır ise Ağır) birebir yeniden üret:
     if not os.path.exists(file_path):
         settings = db.query(Settings).first()
         if not settings:
             raise HTTPException(status_code=500, detail="Settings tanımlı değil")
 
+        # Veritabanına kaydedilen doğru kirayı baz alarak vadelere doğru katsayı çarpanlarını dağıtıyoruz
         base_36_rent = float(offer.monthly_rent)
+        
+        # Orijinal oranlama modeline göre vadeleri koruyoruz:
         scenarios = [
-            {"months": 24, "monthly_per_machine": round(base_36_rent * (7727.35 / 6374.53), 2), "breakdown": {}},
+            {"months": 24, "monthly_per_machine": round(base_36_rent * (7952.47 / 6538.53), 2), "breakdown": {}},
             {"months": 36, "monthly_per_machine": round(base_36_rent, 2), "breakdown": {}},
-            {"months": 48, "monthly_per_machine": round(base_36_rent * (5778.26 / 6374.53), 2), "breakdown": {}},
-            {"months": 60, "monthly_per_machine": round(base_36_rent * (5484.63 / 6374.53), 2), "breakdown": {}}
+            {"months": 48, "monthly_per_machine": round(base_36_rent * (5912.11 / 6538.53), 2), "breakdown": {}},
+            {"months": 60, "monthly_per_machine": round(base_36_rent * (5600.69 / 6538.53), 2), "breakdown": {}}
         ]
 
+        # Teklif oluşturulurken veritabanındaki orijinal usage_factor (Örn: 1.2 Ağır) değerini birebir iletiyoruz
         file_path = create_rental_offer_pdf(
             customer=offer.customer,
             email=email,
@@ -212,7 +215,7 @@ def rental_send_mail(
             machine_count=offer.machine_count,
             yearly_hours=offer.yearly_hours,
             survey_score=offer.survey_score,
-            usage_factor=offer.usage_factor,
+            usage_factor=offer.usage_factor, # ⭐ Veritabanındaki orijinal katsayı
             residual_factor=offer.residual_factor,
             scenarios=scenarios,
             salesman=current_user.username
