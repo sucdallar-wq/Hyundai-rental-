@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, Body, HTTPException
 from sqlalchemy.orm import Session
 import os
 from datetime import datetime
+from typing import Optional  # ⭐ HATA BURADAYDI: Eksik olan kütüphane tanımı eklendi
 
 from app.auth import get_db, get_current_user
 from app.models import User, Settings, RentalOffer
@@ -100,8 +101,7 @@ def rental_offer_auto(
         custom_price = float(custom_price)
 
     scenarios = []
-    # Düzeltilmiş döngü dizisi
-    for months in [24, 36, 48, 60]:
+    for months in:
         inputs = RentalInputs(
             model=model,
             machine_count=machine_count,
@@ -127,7 +127,6 @@ def rental_offer_auto(
         if s["months"] == 36:
             optimum_monthly_rent = s["monthly_per_machine"]
 
-    # PDF oluşturulurken custom_price değerini de parametre olarak gönderiyoruz
     file_path = create_rental_offer_pdf(
         customer=customer,
         email=email,
@@ -139,7 +138,7 @@ def rental_offer_auto(
         residual_factor=residual_factor,
         scenarios=scenarios,
         salesman=current_user.username,
-        custom_price=custom_price  # ⭐ Ekledik
+        custom_price=custom_price
     )
     file_name = os.path.basename(file_path)
 
@@ -170,12 +169,6 @@ def rental_offer_auto(
 # --------------------------------------------------
 # SEND MAIL
 # --------------------------------------------------
-# app/api/rental_router.py içindeki @router.post("/send-mail") fonksiyonunu bununla değiştirin:
-
-# app/api/rental_router.py dosyasındaki en alttaki fonksiyonu bununla değiştirin:
-
-# app/api/rental_router.py dosyasındaki en alttaki fonksiyonu bununla değiştirin:
-
 @router.post("/send-mail")
 def rental_send_mail(
     email: str,
@@ -188,13 +181,10 @@ def rental_send_mail(
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    # 💡 KESİN VE KARARLI ÇÖZÜM: Boş liste tanımlamalarını kaldırarak
-    # doğrudan Python'ın standart Tuple döngüsünü kuruyoruz. Şema hatası tamamen çözülüyor.
     base_36_rent = float(offer.monthly_rent)
     scenarios = []
     
     for months in (24, 36, 48, 60):
-        # Her bir vade için dinamik oranları güvenle türetiyoruz
         if months == 24:
             current_rent = round(base_36_rent * (7452.21 / 6174.08), 2)
         elif months == 36:
