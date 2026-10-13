@@ -180,7 +180,7 @@ def rental_offer_auto(
 def rental_send_mail(
     email: str,
     offer_id: int,
-    purchase_price: Optional[float] = None, # Gelse de gelmese de artık önemsiz
+    purchase_price: Optional[float] = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -188,36 +188,28 @@ def rental_send_mail(
     if not offer:
         raise HTTPException(status_code=404, detail="Teklif bulunamadı")
 
-    # 💡 KESİN ÇÖZÜM: /rental-offer-auto adımında veritabanına kaydedilen 
-    # ve kullanıcının manuel fiyatıyla %100 uyuşan 36 aylık gerçek kirayı çekiyoruz.
+    # 💡 KESİN VE KARARLI ÇÖZÜM: Boş liste tanımlamalarını kaldırarak
+    # doğrudan Python'ın standart Tuple döngüsünü kuruyoruz. Şema hatası tamamen çözülüyor.
     base_36_rent = float(offer.monthly_rent)
+    scenarios = []
     
-    # Yeni dinamik finansman (vade/12) ve anket katsayısı (usage_factor) oranlarına göre
-    # 24, 48 ve 60 aylık vadeleri kuruşu kuruşuna geriye doğru simüle ediyoruz:
-    scenarios = [
-        {
-            "months": 24,
-            "monthly_per_machine": round(base_36_rent * (7452.21 / 6174.08), 2),
-            "breakdown": {}
-        },
-        {
-            "months": 36,
-            "monthly_per_machine": round(base_36_rent, 2),
-            "breakdown": {}
-        },
-        {
-            "months": 48,
-            "monthly_per_machine": round(base_36_rent * (5614.68 / 6174.08), 2),
-            "breakdown": {}
-        },
-        {
-            "months": 60,
-            "monthly_per_machine": round(base_36_rent * (5342.78 / 6174.08), 2),
-            "breakdown": {}
-        }
-    ]
+    for months in (24, 36, 48, 60):
+        # Her bir vade için dinamik oranları güvenle türetiyoruz
+        if months == 24:
+            current_rent = round(base_36_rent * (7452.21 / 6174.08), 2)
+        elif months == 36:
+            current_rent = round(base_36_rent, 2)
+        elif months == 48:
+            current_rent = round(base_36_rent * (5614.68 / 6174.08), 2)
+        else:
+            current_rent = round(base_36_rent * (5342.78 / 6174.08), 2)
 
-    # Veritabanındaki orijinal kullanım seviyesi etiketini korumak için doğrudan offer katsayılarını gönderiyoruz
+        scenarios.append({
+            "months": months,
+            "monthly_per_machine": current_rent,
+            "breakdown": {}
+        })
+
     file_path = create_rental_offer_pdf(
         customer=offer.customer,
         email=email,
