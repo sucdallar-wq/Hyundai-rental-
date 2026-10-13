@@ -231,7 +231,7 @@ def calculate_rental_offer(inp: RentalInputs, db: Session) -> Dict[str, Any]:
     # 12) Toplam maliyet ve aylık kira
     # -----------------------------
     total_cost = base_cost + finance_cost + management_cost + profit
-    risk_multiplier = 1 + (usage_factor - 1) * 0.5
+    risk_multiplier = 1.0 
     monthly_rent_total = (total_cost / inp.months) * risk_multiplier
     
     monthly_rent_per_machine = monthly_rent_total / inp.machine_count
