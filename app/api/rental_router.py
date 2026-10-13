@@ -101,7 +101,7 @@ def rental_offer_auto(
         custom_price = float(custom_price)
 
     scenarios = []
-    for months in:
+    for months in (24, 36, 48, 60):
         inputs = RentalInputs(
             model=model,
             machine_count=machine_count,
